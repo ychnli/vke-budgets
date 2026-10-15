@@ -77,7 +77,7 @@ def test_model_levels_bottom_up(ds, paths):
     assert np.all(np.diff(p, axis=0) < 0)                  # pressure falls upward
     np.testing.assert_array_equal(p, raw(paths["mean"], "PL", t)[::-1])
     np.testing.assert_allclose(ds.phi.isel(time=t).values,
-                               9.81 * raw(paths["mean"], "H", t)[::-1], rtol=1e-6)
+                               9.81 * raw(paths["mean"], "H", t)[::-1], rtol=1e-15)
     assert not np.isnan(p).any()                           # never below ground
 
 

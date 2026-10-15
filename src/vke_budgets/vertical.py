@@ -105,12 +105,14 @@ class PressureInterpolator:
     Args:
         p_in: pressure (Pa) on the input levels, dims (..., `dim`, ...).
         p_out: 1D target pressures (Pa).
-        dim: the input level dimension; the output uses the same name, with
-            p_out as its coordinate.
+        dim: the input level dimension.
+        out_dim: name of the output level dimension, with p_out as its
+            coordinate; defaults to `dim`.
     """
 
-    def __init__(self, p_in, p_out, dim="lev"):
+    def __init__(self, p_in, p_out, dim="lev", out_dim=None):
         self.dim = dim
+        self.out_dim = dim if out_dim is None else out_dim
         self.dims = p_in.dims
         self.p_out = np.asarray(p_out, dtype=np.float64)
         axis = p_in.get_axis_num(dim)
@@ -143,8 +145,9 @@ class PressureInterpolator:
             f1 = np.take_along_axis(fv, k0 + 1, axis=-1)[..., 0]
             out[..., j] = np.where(inside, f0 + (f1 - f0) * w, np.nan)
         coords = {k: c for k, c in f.coords.items() if self.dim not in c.dims}
-        coords[self.dim] = (self.dim, self.p_out, {"units": "Pa"})
-        return xr.DataArray(np.moveaxis(out, -1, axis), dims=f.dims, coords=coords)
+        coords[self.out_dim] = (self.out_dim, self.p_out, {"units": "Pa"})
+        dims = [self.out_dim if d == self.dim else d for d in f.dims]
+        return xr.DataArray(np.moveaxis(out, -1, axis), dims=dims, coords=coords)
 
 
 def bottom_value(f, p=None, dim="lev"):

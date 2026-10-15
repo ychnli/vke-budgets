@@ -157,6 +157,37 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   about 9 s. phi = g·H with the reference's g = 9.81 (a parameter).
 - ERA5 will need the mean state on `lev` instead of `mlev`; not supported yet.
 
+## Budget code
+
+- `terms.py`: one function per term, written once for E = qⁿK (n = 1 KEV,
+  n = 2 VTE) with weights w_m = qⁿ (momentum side) and w_v = n qⁿ⁻¹K (vapor
+  side). HCV = −K∇·(qⁿ**u**) keeps HAKE + HCV = −∇·(E**u**) for both n.
+- `budget.py`: `BudgetOptions` (geometry, quantities, g, limits, pole
+  blanking at 87°, `keep_3d`, `dyn_crosscheck`, `ncl_vte_form`),
+  `window_budget` (one window, pure), and `compute(ds, options, windows,
+  n_workers)`, which returns window terms on `time` and IVT/IKEV/IVTE on
+  `time_inst`.
+- With `geometry.REFERENCE`, 2017-07-12 reproduces the `--no-3d` reference
+  to ≤ 3e-7 relative RMS for every variable, with identical NaN footprints.
+  IPEKE differs by 2.6e-5: the reference rounds Φ to float32 twice (in the
+  interpolation and in ×9.81), and with that rounding emulated it matches to
+  4e-8. The adapter now forms Φ in float64.
+- 2023-01-04 (against the full `--vte` output) reproduces it the same way.
+- `budget.groups(result, quantity)`: tend, hflux, vflux, pe, cond, fric,
+  ana, spte, resid, as in `make_website_budget.py`.
+- Size of the deliberate operator changes, 2023-01-04, relative RMS of
+  (default − reference): horizontal terms 0.6–1.0% away from the seam
+  (IPEKE 1.5–1.8%, a near-geostrophic cancellation); 15–22% in the four
+  columns at ±180° (the seam fix only touches those); exactly 0 for every
+  term without a horizontal derivative. Closure in the AR masks improves
+  slightly: KEV 0.283 → 0.281, VTE 0.340 → 0.334 (0.023 and 0.030 with
+  MERRA-2's DYN tendencies). So the operator flaws are not the residual.
+- Performance on 4 CPUs: 93 s per day with `n_workers=3`, 9.9 GB peak.
+- `scripts/compare_reference.py` compares a day with the reference outputs,
+  for `reference` and for one geometry fix at a time.
+- Not yet ported: the flux-form decomposition (`HFOKE`…`QPHIDIVV`), the
+  `_eta` ordering, and writing the old file layout.
+
 ## MERRA-2 input specifics (put these in a MERRA-2 adapter, not in the physics)
 
 - Five files per day: `tavg3_3d_qdt_Np`, `tavg3_3d_udt_Np` (physics tendencies),
