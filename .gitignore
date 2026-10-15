@@ -4,3 +4,4 @@ reference
 __pycache__/
 .pytest_cache/
 logs/
+scripts/env.sh

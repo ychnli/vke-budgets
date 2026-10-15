@@ -18,7 +18,7 @@ ellipsoid is here because the reference used it (through metpy).
 
 `HorizontalGeometry` collects every choice the horizontal operators make. Its
 defaults are the correct calculation; `REFERENCE` reproduces the reference
-implementation ($REF/py/tools_comp.py, metpy 1.6.3), whose three flaws are
+implementation (reference/py/tools_comp.py, metpy 1.6.3), whose three flaws are
 documented and measured in tests/test_reference_operator_flaws.py.
 """
 from dataclasses import dataclass

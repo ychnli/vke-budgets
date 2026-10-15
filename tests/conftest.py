@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 @pytest.fixture(scope="session")
 def tools_comp():
-    """The reference operators, $REF/py/tools_comp.py, from the gitignored
+    """The reference operators, reference/py/tools_comp.py, from the gitignored
     snapshot in reference/. Tests that need it are skipped without it."""
     if not REFERENCE_PY.is_dir():
         pytest.skip("reference/ snapshot not present")

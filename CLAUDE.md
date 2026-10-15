@@ -202,8 +202,8 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 - `vke-budgets run --start --end --root --out [--layout legacy] [--bits N]`:
   resumable (finished days are kept as `parts/<day>.nc` until their month
   is merged; finished months are skipped). `scripts/run_merra2.sbatch`: one
-  array task per month (~45 min on 4 CPUs). `scripts/env.sh` activates the
-  env (tracked copy, without NCL).
+  array task per month (~45 min on 4 CPUs); pass `--account`/`--partition`
+  to `sbatch`.
 - Sizes, one day of KEV + VTE (39 column variables, global): 200 MB lossless
   float32 + zlib; 121 MB at 12 BitRound bits (relative error 5e-5). Note
   that netCDF's `significant_digits` counts bits for BitRound. Raw MERRA-2
@@ -268,6 +268,16 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   replicate it, and don't silently fix it.
 
 ## Environment and cluster rules (Sherlock)
+
+- **No site-specific paths or settings in tracked files** (`src/`, `scripts/`,
+  `tests/`, README, pyproject); `tests/test_portability.py` enforces it. Site
+  details go in the local, gitignored `scripts/env.sh` (copied from the
+  tracked `scripts/env.example.sh`) or in environment variables. Ours
+  activates the vke env and sets `VKE_TEST_MERRA2_ROOT` and
+  `VKE_TEST_REFERENCE`, the data for the real-data tests (skipped without).
+  `source scripts/env.sh` is enough for the package and the tests; NCL still
+  needs `$REF/case2023/env_vke.sh`. This file (CLAUDE.md) is agent context
+  and may hold site details.
 
 - `source $REF/case2023/env_vke.sh`: a conda env at `$GROUP_HOME/yucli/envs/vke`
   (Python 3.12, numpy 2.0, xarray 2025.1, metpy 1.6.3) plus NCL 6.6.2. Source

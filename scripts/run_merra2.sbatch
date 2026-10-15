@@ -1,7 +1,5 @@
 #!/bin/bash
 #SBATCH --job-name=vke_budgets
-#SBATCH --account=dayang
-#SBATCH --partition=serc
 #SBATCH --time=02:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
@@ -10,9 +8,13 @@
 
 # KEV and VTE budgets for one month of MERRA-2 per array task (a month is
 # about 45 min on 4 CPUs, with 3 windows in flight). Submit one array per
-# year, from the repository root (logs/ must exist):
+# year, from the repository root (logs/ must exist), giving your cluster's
+# account and partition on the command line:
 #
-#   YEAR=2023 ROOT=/path/to/merra2 OUT=$SCRATCH/vke-budgets/clim sbatch --export=ALL scripts/run_merra2.sbatch
+#   YEAR=2023 ROOT=/path/to/merra2 OUT=/path/to/output \
+#       sbatch --account=<account> --partition=<partition> --export=ALL scripts/run_merra2.sbatch
+#
+# scripts/env.sh (copied from scripts/env.example.sh) sets up the environment.
 #
 # ROOT holds one directory per year of raw files. The last day of a month
 # needs 00Z of the next day's inst3_3d_asm_Np. Reruns skip finished months

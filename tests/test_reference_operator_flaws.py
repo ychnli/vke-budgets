@@ -1,7 +1,7 @@
 """
 Do the reference's horizontal operators have the flaws listed in
 VERIFICATION_MERRA2.md §4 (items 7, 8 and 10)? Each test applies the
-reference's own gradient_2d / divergence_2d ($REF/py/tools_comp.py, metpy
+reference's own gradient_2d / divergence_2d (reference/py/tools_comp.py, metpy
 1.6.3) to an analytic field on the MERRA-2 grid, and compares the result with
 the exact derivative on the WGS84 ellipsoid (see exact.py).
 

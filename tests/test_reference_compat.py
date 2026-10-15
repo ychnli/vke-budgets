@@ -1,6 +1,6 @@
 """
 With geometry.REFERENCE, our operators must reproduce the reference
-operators ($REF/py/tools_comp.py and tools_ncl_equivalent.py), flaws
+operators (reference/py/tools_comp.py and tools_ncl_equivalent.py), flaws
 included, far below float32 rounding. Fields are random, with below-ground
 missing values like real pressure-level data.
 """

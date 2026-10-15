@@ -1,7 +1,7 @@
 """
 The MERRA-2 adapter against the raw files, read independently with netCDF4.
-Needs the 2023-01-04 files in $GROUP_SCRATCH/Aidi/VKE_budget/case2023/data;
-skipped without them.
+Needs the 2023-01-04 and 2023-01-05 files under $VKE_TEST_MERRA2_ROOT (one
+directory per year); skipped without them.
 """
 import os
 
@@ -12,12 +12,12 @@ import pytest
 from vke_budgets.sources import merra2
 from vke_budgets.standard import check_input, physics_processes
 
-ROOT = os.path.expandvars("$GROUP_SCRATCH/Aidi/VKE_budget/case2023/data")
+ROOT = os.environ.get("VKE_TEST_MERRA2_ROOT", "")
 DATE = "20230104"
 FILL = 1e15
 
 pytestmark = pytest.mark.skipif(not os.path.isdir(os.path.join(ROOT, "2023")),
-                                reason="MERRA-2 test data not present")
+                                reason="set VKE_TEST_MERRA2_ROOT to run")
 
 
 @pytest.fixture(scope="module")

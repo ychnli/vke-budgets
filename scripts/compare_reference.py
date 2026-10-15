@@ -4,8 +4,7 @@ Compute one day of the budgets and compare every variable with the
 reference outputs (analysis_AR_IVKE1_{tavg,inst}<date>.nc).
 
     python scripts/compare_reference.py --date 20170712 \\
-        --root $GROUP_SCRATCH/Aidi/VKE_budget/data \\
-        --ref-dir $GROUP_SCRATCH/Aidi/VKE_budget/case2023/verify/port_20170712 \\
+        --root /path/to/merra2 --ref-dir /path/to/reference/outputs \\
         --config reference
 
 Statistics are over |lat| < 87 and all time steps: relative RMS

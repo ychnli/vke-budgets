@@ -72,10 +72,11 @@ def test_legacy_layout_round_trip(tmp_path):
     xr.testing.assert_allclose(back["IVT"], result["IVT"].isel(time_inst=slice(0, 8)).astype("float32"))
 
 
-REF_2017 = os.path.expandvars("$GROUP_SCRATCH/Aidi/VKE_budget/case2023/verify/port_20170712")
+# The reference's 2017-07-12 outputs (analysis_AR_IVKE1_{inst,tavg}20170712.nc).
+REF_2017 = os.environ.get("VKE_TEST_REFERENCE", "")
 
 
-@pytest.mark.skipif(not os.path.isdir(REF_2017), reason="reference outputs not present")
+@pytest.mark.skipif(not os.path.isdir(REF_2017), reason="set VKE_TEST_REFERENCE to run")
 def test_open_legacy_reads_the_reference_files():
     ref = io.open_legacy(REF_2017, "20170712")
     assert ref.sizes["time"] == 8 and ref.sizes["time_inst"] == 8
