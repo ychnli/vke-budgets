@@ -24,8 +24,8 @@ Repo: `$GROUP_HOME/yucli/vke-budgets`, remote `git@github.com:ychnli/vke-budgets
 
 ## References
 
-Paper PDFs go in this repo once the user adds them; read those rather than
-searching the web.
+The PDFs are in `papers/` (gitignored); read those rather than searching the
+web.
 - Ong & Yang 2024, *Nat. Commun.*, doi:10.1038/s41467-024-53369-0. Introduces
   VKE (q²K) for AR detection.
 - Zhang, Yang, Ong & Tan 2026, *GRL*, doi:10.1029/2025GL119841. Introduces the
@@ -36,6 +36,12 @@ searching the web.
 
 All existing code lives there, outside this repo. It is the ground truth for
 numerical consistency: check every port of a calculation against it.
+
+`reference/` in this repo is a read-only, gitignored snapshot of the code and
+small files of `$REF` (taken 2026-10-15, with modification times kept), since
+`$REF` is on purged scratch and has no VCS. `reference/MANIFEST.md` lists what
+was left out and the sha256 of each file. Read code from `reference/`, which is
+safe from the purge. Data and reference outputs are only in `$REF`.
 
 - `$REF/case2023/py/ARanalysisMERRA2_IVKE1_VTE.py`: the KEV + VTE budget
   (`--vte`). This is the script being refactored. Its docstring, and that of
@@ -58,6 +64,9 @@ numerical consistency: check every port of a calculation against it.
   (plots), `$REF/case2023/run_port.sbatch` (the DetectBlobs commands, with
   thresholds in `$REF/threshold_v2.txt`), and
   `$REF/case2023/py/make_website_budget.py` (term groupings and residual).
+- `$REF/case2023/py/inst_dynamics.py` was a temporary experiment: the offline
+  dynamics from the instantaneous fields, to probe the budget residual. It is
+  not part of the package, but the residual is (see Later goals).
 - `$REF` is Aidi's tree. Read it, never edit it; `$REF/case2023/` is ours.
 
 ## Physics in one screen
@@ -108,10 +117,31 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   terms use the NCL's model-level ordering. Vertical derivatives are taken on
   the 72 hybrid levels (`tavg3_3d_asm_Nv`, 3D `PL`) and then linearly
   interpolated to pressure levels.
-- Known small flaws, left as they are for now: metpy without a CRS
-  double-counts the meridional ellipsoid factor (+0.2–0.7%); longitude
-  derivatives are not cyclic at the ±180° seam. Fixing either is a deliberate
-  change (see below).
+- The reference's horizontal operators have three flaws, confirmed against
+  exact solutions in `tests/test_reference_operator_flaws.py`: (1) metpy
+  without a CRS multiplies d/dy by a/M on top of the true spacing (+0.67% at
+  the equator, −0.30% at 80°); (2) the divergence metric term uses a sphere
+  (−v tanφ/R_mean) while the derivatives use WGS84; (3) d/dx is one-sided at
+  the ±180° seam (twice the usual truncation error, at two columns).
+
+## Our operators (`src/vke_budgets/{geometry,horizontal,vertical}.py`)
+
+- Written in numpy, not metpy (agreed with the user: small dependencies,
+  visible stencils). metpy is a test-only dependency.
+- **The default is the correct calculation, with the flaws fixed (user's
+  decision).** `HorizontalGeometry` has one switch per flaw, and the
+  `geometry.REFERENCE` preset turns on all three plus WGS84. With it, the
+  operators match the reference's to 1e-10 (`tests/test_reference_compat.py`).
+  Use it to reproduce the reference outputs, and switch one flaw at a time
+  to measure each fix.
+- Default Earth: a sphere of radius 6371.0 km (`MERRA2_SPHERE`, GEOS's
+  MAPL_RADIUS), agreed with the user: the model solves its equations on a
+  sphere, and the original NCL assumes one (6.37122e6 m). WGS84 came in
+  unintentionally through metpy; it stays available for `REFERENCE`.
+- MAPL_GRAV is 9.80665 in MAPL v2.0.0 and later; the reference uses 9.81.
+- The vertical operators follow the reference exactly: trapezoid integral
+  skipping layers with a missing end, NCL-style two-layer d/dp, linear
+  interpolation in p with no extrapolation.
 
 ## MERRA-2 input specifics (put these in a MERRA-2 adapter, not in the physics)
 
@@ -141,6 +171,10 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 - By default the package computes the core KEV and VTE budgets only. The
   diagnostic extras are opt-in: `_eta` ordering, flux-form decomposition
   (`HFOKE`…`QPHIDIVV`), the `_vO` pair, and the `DOKE`/`DOV` cross-checks.
+- 3D (per-level) output fields are opt-in. By default only column integrals
+  and the instantaneous IKEV/IVT/IVTE are returned and written.
+- Every term is an xarray DataArray with coordinates, `units` and `long_name`,
+  so users can inspect and plot terms directly.
 - Separate the layers. Data-source adapters (names, units, level order,
   coordinates) produce a standard Dataset. Operators (integrate, grad, div,
   d/dp, interpolate) and budget-term functions are pure and source-agnostic.
@@ -150,9 +184,10 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 
 ## Numerical consistency (required)
 
-- The package must reproduce the reference outputs to float32 rounding unless a
-  change is deliberate. Report every deliberate change to the user with its
-  size (relative RMS per term).
+- With `geometry.REFERENCE` (and any other compatibility switches), the
+  package must reproduce the reference outputs to float32 rounding. The
+  defaults differ deliberately. Report every deliberate change to the user
+  with its size (relative RMS per term, one change at a time).
 - Compare with `$REF/case2023/verify/compare.py A.nc B.nc`, or an equivalent
   test in this repo. Reference outputs:
   - `$REF/case2023/output/analysis_AR_IVKE1_*2023010[345].nc`: full 3D, `--vte`
@@ -179,3 +214,21 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 - Memory: the reference loops one tavg step at a time and still peaks near
   29 GB (40 GB with `--vte`) on the global 0.5° grid. Keep a per-time-step
   (or dask-chunked) design.
+
+## Later goals
+
+- Budget closure. The KEV residual is about 30% of the tendency with the
+  offline dynamics and about 3% with MERRA-2's DYN tendencies
+  (`VERIFICATION_MERRA2.md` §6). Once the port is done, use the clearer code to
+  find out where it comes from. The user will give more context then.
+- Measure each operator fix on real data (relative RMS per term).
+- Issues found while reading the reference, not yet acted on (raise them with
+  the user when porting the code they affect):
+  - `SPTE` is added everywhere, but where p_s > 1000 hPa the column bottom is
+    fixed at 1000 hPa, so the Leibniz boundary term there should be zero.
+  - Near steep terrain, horizontal derivatives on pressure levels are missing
+    next to below-ground points, so the integral of those terms starts higher
+    than the integral of the tendency. A possible source of residual.
+  - `ddp` uses the two-layer chord (first-order on uneven levels).
+  - g = 9.81 is used for Φ = gH and the integrals; MAPL_GRAV is 9.80665
+    (not checked for the 2014 GEOS-5.12.4 of MERRA-2).

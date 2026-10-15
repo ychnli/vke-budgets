@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vke-budgets"
+version = "0.0.1"
+description = "Vapor kinetic energy (KEV and VTE) budgets of atmospheric rivers"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "xarray>=2023.1"]
+
+[project.optional-dependencies]
+# metpy is only used to check our operators against the reference's.
+test = ["pytest", "scipy", "metpy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # Raised by the reference code and its dependencies, not by ours.
+    "ignore::DeprecationWarning",
+    "ignore::SyntaxWarning",
+]
