@@ -20,6 +20,7 @@ Precision. Values are stored as float32 with zlib compression. With
 (netCDF BitRound): 12 bits keep about 3.6 decimal digits, a relative error
 near 5e-5, and shrink a day of KEV + VTE output from about 200 to 120 MB.
 """
+import glob
 import os
 
 import numpy as np
@@ -66,10 +67,22 @@ def write_period(result, path, significant_bits=None, complevel=1):
 
 def open_budget(paths, **kwargs):
     """Open clean-layout files (a list, or a glob pattern) as one lazy
-    Dataset, one dask chunk per time step."""
-    return xr.open_mfdataset(paths, combine="by_coords", data_vars="minimal",
-                             coords="minimal", compat="override",
-                             chunks={"time": 1, "time_inst": 1}, **kwargs)
+    Dataset, one dask chunk per time step.
+
+    The files are joined with budget.combine: window terms along `time`,
+    instantaneous columns along `time_inst`. (xarray's automatic
+    open_mfdataset combine cannot do this: with two time dimensions it
+    joins the window terms along the wrong one and fills them with NaN.)
+    """
+    from .budget import combine
+
+    files = sorted(glob.glob(paths)) if isinstance(paths, str) else list(paths)
+    if not files:
+        raise FileNotFoundError(f"no files match {paths}")
+    parts = [xr.open_dataset(f, chunks={"time": 1, "time_inst": 1}, **kwargs) for f in files]
+    out = combine(parts).sortby("time").sortby("time_inst")
+    out.attrs = parts[0].attrs
+    return out
 
 
 # --- Legacy layout -------------------------------------------------------

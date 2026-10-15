@@ -33,14 +33,22 @@ def test_clean_round_trip_drops_the_closing_step(tmp_path):
 
 
 def test_consecutive_files_open_as_one(tmp_path):
-    paths = []
-    for day in ("2023-01-04", "2023-01-05"):
-        paths.append(str(tmp_path / f"{day}.nc"))
-        io.write_period(day_result(day), paths[-1])
-    both = io.open_budget(str(tmp_path / "*.nc"))
+    """Values, not just shapes: each day's terms must come back from its own
+    file (an earlier version kept day 1 and filled the rest with NaN)."""
+    days = {"2023-01-04": 1e-5, "2023-01-05": 2e-5}         # a different drag each day
+    results = []
+    for day, drag in days.items():
+        ds = solid_body(n_time=8, drag=drag, drying=1e-8, start=day)
+        results.append(budget.compute(ds))
+        io.write_period(results[-1], str(tmp_path / f"{day}.nc"))
+    both = io.open_budget(str(tmp_path / "*.nc")).load()
     assert both.sizes == {"time": 16, "time_inst": 16, "lat": both.sizes["lat"],
                           "lon": both.sizes["lon"]}
     assert pd.DatetimeIndex(both["time_inst"].values).is_monotonic_increasing
+    expected = budget.combine([r.isel(time_inst=slice(0, 8)) for r in results])
+    for name in both.data_vars:
+        xr.testing.assert_allclose(both[name],
+                                   expected[name].astype("float32").transpose(*both[name].dims))
 
 
 def test_bitround_precision(tmp_path):
@@ -98,9 +106,15 @@ def test_pipeline_months_and_resume(tmp_path):
     pipeline.run("2023-01-30", "2023-02-01", None, out, open_day=fake_source(calls), log=None)
     files = sorted(os.listdir(out))
     assert files == ["budget_20230130-20230131.nc", "budget_20230201-20230201.nc"]
-    both = io.open_budget(os.path.join(out, "budget_*.nc"))
+    both = io.open_budget(os.path.join(out, "budget_*.nc")).load()
     assert both.sizes["time"] == 24 and both.sizes["time_inst"] == 24
     assert calls == ["20230130", "20230131", "20230201"]
+    # Every day's values made it into the month files (not only the first).
+    inner = np.abs(both["lat"]) < 87
+    assert np.isfinite(both["ITOKE"].where(inner, 0.0)).all()
+    one_day = budget.compute(solid_body(n_time=8, drag=1e-5, start="2023-01-31"))
+    xr.testing.assert_allclose(both["ITOKE"].sel(time=one_day["time"]),
+                               one_day["ITOKE"].astype("float32"))
 
     # Rerun: complete months are skipped.
     pipeline.run("2023-01-30", "2023-02-01", None, out, open_day=fake_source(calls), log=None)

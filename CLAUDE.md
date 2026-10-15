@@ -143,6 +143,20 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   skipping layers with a missing end, NCL-style two-layer d/dp, linear
   interpolation in p with no extrapolation.
 
+## Notebooks
+
+- `notebooks/00_quickstart.ipynb`: plumbing for the user's own residual
+  investigation (load, one live window, the case from files, group maps,
+  RMS, the exact three-way residual split, dynamics profiles). Keep it
+  plumbing; the user drives the investigation. Commit notebooks without
+  outputs.
+- Kernel `vke-budgets` (`~/.local/share/jupyter/kernels/vke`) sets
+  `VKE_MERRA2_ROOT`, `VKE_CASE_OUT`, `VKE_AR_MASKS` and one thread per
+  library; notebooks read paths only from those.
+- First numbers (2023-01-03…05, inside the IKEV AR mask, default
+  geometry): RMS(resid)/RMS(tend) 0.287; parts: tendency mismatch 0.146,
+  MERRA-2 closure 0.026, offline dynamics 0.281.
+
 ## Standard input and adapters
 
 - `src/vke_budgets/standard.py` defines the standard input Dataset (names,
@@ -196,6 +210,10 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   window terms on `time`, IVT/IKEV/IVTE on `time_inst`. A file excludes the
   instantaneous step that closes its last window, so files never overlap and
   `io.open_budget("budget_*.nc")` opens any number of them as one lazy Dataset.
+- `open_budget` joins files with `budget.combine`, not `open_mfdataset`'s
+  automatic combine: with two time dimensions, that kept the first file's
+  window terms and filled the rest with NaN (a bug found by the notebook,
+  fixed 2026-10-15; tests now compare values across files).
 - Legacy layout: `write_legacy` / `open_legacy`, the reference's two files per
   day (1e15 fill, integer minutes, levels in hPa). `open_legacy` also reads
   the reference's own outputs.
@@ -278,7 +296,6 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   `source scripts/env.sh` is enough for the package and the tests; NCL still
   needs `$REF/case2023/env_vke.sh`. This file (CLAUDE.md) is agent context
   and may hold site details.
-
 - `source $REF/case2023/env_vke.sh`: a conda env at `$GROUP_HOME/yucli/envs/vke`
   (Python 3.12, numpy 2.0, xarray 2025.1, metpy 1.6.3) plus NCL 6.6.2. Source
   it; never pipe it. Run NCL with `< /dev/null`. Install this package into
@@ -290,6 +307,12 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 - Memory: the reference loops one tavg step at a time and still peaks near
   29 GB (40 GB with `--vte`) on the global 0.5° grid. Keep a per-time-step
   (or dask-chunked) design.
+
+## Before the public release (agreed with the user)
+
+- Remove CLAUDE.md from the public repository. It holds site-specific
+  paths and settings on purpose; it is agent context for this cluster.
+- Hardcoded paths that are already in the git history may stay there.
 
 ## Later goals
 
