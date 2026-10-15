@@ -185,8 +185,29 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 - Performance on 4 CPUs: 93 s per day with `n_workers=3`, 9.9 GB peak.
 - `scripts/compare_reference.py` compares a day with the reference outputs,
   for `reference` and for one geometry fix at a time.
-- Not yet ported: the flux-form decomposition (`HFOKE`…`QPHIDIVV`), the
-  `_eta` ordering, and writing the old file layout.
+- `flux_form=True` adds the flux-form decomposition (`HFOKE`…`QPHIDIVV`,
+  KEV only). Not yet ported: the `_eta` ordering.
+- `budget.iter_windows` yields one window at a time (for streaming
+  reductions); `compute` and `combine` build on it.
+
+## Output and long runs (`io.py`, `pipeline.py`, `cli.py`)
+
+- Clean layout: one file per calendar month, `budget_<first>-<last>.nc`,
+  window terms on `time`, IVT/IKEV/IVTE on `time_inst`. A file excludes the
+  instantaneous step that closes its last window, so files never overlap and
+  `io.open_budget("budget_*.nc")` opens any number of them as one lazy Dataset.
+- Legacy layout: `write_legacy` / `open_legacy`, the reference's two files per
+  day (1e15 fill, integer minutes, levels in hPa). `open_legacy` also reads
+  the reference's own outputs.
+- `vke-budgets run --start --end --root --out [--layout legacy] [--bits N]`:
+  resumable (finished days are kept as `parts/<day>.nc` until their month
+  is merged; finished months are skipped). `scripts/run_merra2.sbatch`: one
+  array task per month (~45 min on 4 CPUs). `scripts/env.sh` activates the
+  env (tracked copy, without NCL).
+- Sizes, one day of KEV + VTE (39 column variables, global): 200 MB lossless
+  float32 + zlib; 121 MB at 12 BitRound bits (relative error 5e-5). Note
+  that netCDF's `significant_digits` counts bits for BitRound. Raw MERRA-2
+  input is 5.3 GB per day (Nv 2.2, inst 1.2, udt 1.15, qdt 0.73).
 
 ## MERRA-2 input specifics (put these in a MERRA-2 adapter, not in the physics)
 

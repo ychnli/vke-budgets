@@ -1,6 +1,6 @@
 """
 Assemble the KEV and VTE budgets from a standard input Dataset
-(standard.py), one averaging window at a time.
+(standard.py) one averaging window at a time.
 
 For each window:
 
@@ -62,6 +62,23 @@ LONG_NAMES = {
     "AOKEV": "analysis increments",
 }
 
+# Flux-form diagnostics (KEV only): name -> (long name, 3D units, column units).
+FLUX_FORM = {
+    "HFOKE": ("horizontal flux of KE, -q div(K u)", "m2 s-3", "kg s-3"),
+    "VFOKE": ("vertical flux of KE, -q d(K omega)/dp", "m2 s-3", "kg s-3"),
+    "HFOV": ("horizontal flux of vapor, = HCV", "m2 s-3", "kg s-3"),
+    "VFOV": ("vertical flux of vapor, = VCV", "m2 s-3", "kg s-3"),
+    "HFADT": ("horizontal divergence cross term, q K div(u)", "m2 s-3", "kg s-3"),
+    "VFADT": ("vertical divergence cross term, q K d(omega)/dp", "m2 s-3", "kg s-3"),
+    "DIVV": ("divergence of the 3D wind, div(u) + d(omega)/dp", "s-1", "kg m-2 s-1"),
+    "QKDIVV": ("2 q K DIVV, flux-to-advection form", "m2 s-3", "kg s-3"),
+    "ALPHA": ("specific volume, -dPhi/dp", "m3 kg-1", None),
+    "BARCC": ("baroclinic conversion, -omega alpha q", "m2 s-3", "kg s-3"),
+    "HFOGEOP": ("horizontal flux of geopotential, -q div(Phi u)", "m2 s-3", "kg s-3"),
+    "FOGEOP": ("flux of geopotential", "m2 s-3", "kg s-3"),
+    "QPHIDIVV": ("q Phi DIVV, geopotential closure", "m2 s-3", "kg s-3"),
+}
+
 
 @dataclass(frozen=True)
 class BudgetOptions:
@@ -80,6 +97,8 @@ class BudgetOptions:
         dyn_crosscheck: also compute DOKE and DOV from the model's own
             dynamics tendencies, a cross-check on HAKE + VAKE + PEKE etc.
         ncl_vte_form: also compute HCV_vO and VCV_vO for VTE.
+        flux_form: also compute the flux-form decomposition of the KEV
+            budget (HFOKE ... QPHIDIVV, see terms.py).
     """
     geometry: HorizontalGeometry = DEFAULT
     quantities: tuple = ("KEV", "VTE")
@@ -90,6 +109,7 @@ class BudgetOptions:
     keep_3d: bool = False
     dyn_crosscheck: bool = False
     ncl_vte_form: bool = False
+    flux_form: bool = False
 
 
 def _name(term, quantity):
@@ -147,6 +167,17 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
         pieces[f"d_q{n}omega_dp"] = ddp(q_ml**n * omega_ml, p, "mlev")
     if options.ncl_vte_form and "d_q1omega_dp" not in pieces:
         pieces["d_q1omega_dp"] = ddp(q_ml * omega_ml, p, "mlev")
+    if options.flux_form:
+        k_ml, phi_ml = terms.kinetic_energy(u_ml, v_ml), window["phi"]
+        pieces.update({
+            "d_komega_dp": ddp(k_ml * omega_ml, p, "mlev"),
+            "d_omega_dp": ddp(omega_ml, p, "mlev"),
+            "d_phi_dp": ddp(phi_ml, p, "mlev"),
+            "d_omegaphi_dp": ddp(omega_ml * phi_ml, p, "mlev"),
+            "omega": omega_ml,
+        })
+        if "d_q1omega_dp" not in pieces:
+            pieces["d_q1omega_dp"] = ddp(q_ml * omega_ml, p, "mlev")
 
     # 2. To pressure levels.
     to_p = PressureInterpolator(p, window["lev"].values, dim="mlev", out_dim="lev")
@@ -219,13 +250,96 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
             out[f"{quantity}TEND"] = tend.assign_attrs(
                 units="m2 s-3", long_name=f"local {quantity} tendency")
 
+    if options.flux_form:
+        out.update(_flux_form(q, k, u, v, phi, pieces, out, options))
+
     result = xr.Dataset(out)
     if options.pole_lat_limit is not None:
         result = result.where(np.abs(result["lat"]) < options.pole_lat_limit)
     return result
 
 
+def _flux_form(q, k, u, v, phi, pieces, out, options):
+    """The flux-form diagnostics of the KEV budget, integrated (and 3D with
+    keep_3d)."""
+    geom, integ = options.geometry, _integrator(options)
+    divv = terms.three_d_divergence(u, v, pieces["d_omega_dp"], geom)
+    alpha, barcc, hfogeop, fogeop, qphidivv = terms.geopotential_flux_terms(
+        q, phi, u, v, pieces["omega"], pieces["d_phi_dp"], pieces["d_omegaphi_dp"], divv, geom)
+    fields = {
+        "HFOKE": terms.horizontal_flux_of_ke(q, k, u, v, geom),
+        "VFOKE": terms.vertical_flux_of_ke(q, pieces["d_komega_dp"]),
+        "HFOV": terms.horizontal_convergence_of_vapor(k, q, u, v, geom),
+        "VFOV": terms.vertical_convergence_of_vapor(k, pieces["d_q1omega_dp"]),
+        "HFADT": terms.horizontal_divergence_cross_term(q, k, u, v, geom),
+        "VFADT": terms.vertical_divergence_cross_term(q, k, pieces["d_omega_dp"]),
+        "DIVV": divv,
+        "QKDIVV": 2.0 * q * k * divv,
+        "ALPHA": alpha, "BARCC": barcc, "HFOGEOP": hfogeop, "FOGEOP": fogeop,
+        "QPHIDIVV": qphidivv,
+    }
+    result = {}
+    for name, f in fields.items():
+        long_name, units_3d, units_col = FLUX_FORM[name]
+        if units_col is not None:
+            result[f"I{name}"] = integ(f).assign_attrs(units=units_col, long_name=long_name)
+        if options.keep_3d:
+            result[name] = f.assign_attrs(units=units_3d, long_name=long_name)
+    return result
+
+
 INST_INPUTS = ["q_inst", "u_inst", "v_inst", "ps_inst"]
+
+
+def iter_windows(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=False):
+    """Yield the budget of each window in turn, as compute() would return it
+    for that window alone (window terms on a length-1 `time`, and the
+    instantaneous columns at its two ends on `time_inst`).
+
+    Use it to stream: reduce each window (a sum, a composite, a regional
+    mean) and let it go, without holding a whole period in memory. With
+    n_workers > 1, up to n_workers windows are computed ahead in threads.
+    """
+    check_input(ds)
+    windows = range(ds.sizes["time"]) if windows is None else list(windows)
+    seconds = (ds["time_inst"].values[1:] - ds["time_inst"].values[:-1]) / np.timedelta64(1, "s")
+    mean_state = ds.drop_dims("time_inst")
+
+    def one(i):
+        inst = ds[INST_INPUTS].isel(time_inst=[i, i + 1]).load()
+        inst = inst.merge(instantaneous_columns(inst, options))
+        window = mean_state.isel(time=i).load()
+        result = window_budget(window, inst.isel(time_inst=0), inst.isel(time_inst=1),
+                               seconds[i], options)
+        result = result.drop_vars(["time", "time_inst"], errors="ignore")
+        result = result.expand_dims(time=[window["time"].values])
+        columns = inst[["IVT"] + [f"I{qn}" for qn in options.quantities]]
+        if progress:
+            print(f"  window {str(window['time'].values)[:16]}", flush=True)
+        return xr.merge([result, columns])
+
+    if n_workers <= 1:
+        for i in windows:
+            yield one(i)
+        return
+    with ThreadPoolExecutor(n_workers) as pool:
+        # Keep n_workers windows in flight, in order.
+        pending = [pool.submit(one, i) for i in windows[:n_workers]]
+        for i in windows[n_workers:]:
+            yield pending.pop(0).result()
+            pending.append(pool.submit(one, i))
+        for future in pending:
+            yield future.result()
+
+
+def combine(parts):
+    """Join per-window (or per-day) results in time: the window terms along
+    `time`, the instantaneous columns along `time_inst`, each instantaneous
+    step once."""
+    windows = xr.concat([p.drop_dims("time_inst") for p in parts], dim="time")
+    inst = xr.concat([p[[v for v in p.data_vars if "time_inst" in p[v].dims]] for p in parts],
+                     dim="time_inst").drop_duplicates("time_inst")
+    return xr.merge([windows, inst])
 
 
 def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=False):
@@ -236,44 +350,19 @@ def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=Fal
             in memory.
         options: BudgetOptions.
         windows: indices of the windows to compute (default: all).
-        n_workers: windows computed at once, in threads. Each window needs a
-            few GB.
+        n_workers: windows computed at once, in threads. Each window needs
+            about 3 GB.
         progress: print one line per window.
     Returns:
         Dataset with the window terms on `time` and the instantaneous column
         integrals (IVT, IKEV, IVTE) on `time_inst`, for the selected windows
         and the instantaneous steps that bound them.
     """
-    check_input(ds)
-    windows = range(ds.sizes["time"]) if windows is None else list(windows)
-    steps = sorted({j for i in windows for j in (i, i + 1)})
-    inst = ds[INST_INPUTS].isel(time_inst=steps).load()
-    inst = inst.merge(instantaneous_columns(inst, options))
-    seconds = (ds["time_inst"].values[1:] - ds["time_inst"].values[:-1]) / np.timedelta64(1, "s")
-
-    def one(i):
-        window = ds.drop_dims("time_inst").isel(time=i).load()
-        start = inst.sel(time_inst=ds["time_inst"].values[i])
-        end = inst.sel(time_inst=ds["time_inst"].values[i + 1])
-        result = window_budget(window, start, end, seconds[i], options)
-        if progress:
-            print(f"  window {i}: {str(window['time'].values)[:16]}", flush=True)
-        result = result.drop_vars(["time", "time_inst"], errors="ignore")
-        return result.expand_dims(time=[window["time"].values])
-
-    if n_workers > 1:
-        with ThreadPoolExecutor(n_workers) as pool:
-            results = list(pool.map(one, windows))
-    else:
-        results = [one(i) for i in windows]
-
-    columns = inst[["IVT"] + [f"I{qn}" for qn in options.quantities]]
-    out = xr.merge([xr.concat(results, dim="time"), columns])
+    parts = list(iter_windows(ds, options, windows, n_workers, progress))
+    out = combine(parts)
     out.attrs = {"source": ds.attrs.get("source", ""),
-                 "geometry": repr(options.geometry),
                  "options": repr(options)}
     return out
-
 
 GROUPS = {
     "hflux": ("HAKE", "HCV"),

@@ -1,19 +1,18 @@
 """
 Budget terms for E = q^n K, the vapor kinetic energies of atmospheric rivers.
 
-    n = 1:  KEV = q K      (Zhang et al. 2026), the budgeted quantity
-    n = 2:  VTE = q^2 K    (Ong & Yang 2024's "VKE")
+    n = 1:  KEV = q K
+    n = 2:  VTE = q^2 K
 
 with q the specific humidity and K = (u^2 + v^2)/2 the kinetic energy per
-unit mass. All terms are per unit mass, on pressure levels (pressure
-coordinates, omega = dp/dt), in m2 s-3 (strictly kg kg-1 m2 s-3 for n = 1).
+unit mass. All terms are per unit mass, on pressure levels, in m2 s-3 
+(strictly kg kg-1 m2 s-3 for n = 1).
 
 The budget equation
 -------------------
 The product rule gives
 
     dE/dt = q^n u . du/dt  +  n q^(n-1) K dq/dt
-            \\_ momentum _/     \\___ vapor ___/
 
 so every momentum term carries the weight w_m = q^n (times u .), and every
 vapor term the weight w_v = n q^(n-1) K. For KEV, w_m = q and w_v = K.
@@ -155,3 +154,61 @@ def surface_pressure_term(dpsdt, e_bottom, g):
     As in the reference, E(p_bottom) is E at the lowest level above ground
     and the term is applied everywhere."""
     return dpsdt * e_bottom / g
+
+
+# --- Flux-form decomposition (KEV only; diagnostics) -----------------------
+#
+# The flux divergence of KEV = qK splits by the product rule as
+#
+#     div3(q K v) = q div3(K v) + K div3(q v) - q K div3(v),
+#
+# with div3(a v) = div(a u) + d(a omega)/dp. Its horizontal and vertical
+# parts, with a minus sign, are
+#
+#     HFOKE + HFOV + HFADT = -div(q K u)          (HFOV is HCV)
+#     VFOKE + VFOV + VFADT = -d(q K omega)/dp     (VFOV is VCV)
+#
+# and equal HAKE + HCV and VAKE + VCV analytically, but are differenced in a
+# different order. DIVV = div(u) + d(omega)/dp vanishes by continuity, so
+# every term proportional to it measures the discrete continuity error.
+
+def horizontal_flux_of_ke(q, k, u, v, geometry):
+    """HFOKE = -q div(K u)."""
+    return -q * divergence(k * u, k * v, geometry)
+
+
+def vertical_flux_of_ke(q, d_k_omega_dp):
+    """VFOKE = -q d(K omega)/dp, the derivative taken on model levels."""
+    return -q * d_k_omega_dp
+
+
+def horizontal_divergence_cross_term(q, k, u, v, geometry):
+    """HFADT = q K div(u)."""
+    return q * k * divergence(u, v, geometry)
+
+
+def vertical_divergence_cross_term(q, k, d_omega_dp):
+    """VFADT = q K d(omega)/dp."""
+    return q * k * d_omega_dp
+
+
+def three_d_divergence(u, v, d_omega_dp, geometry):
+    """DIVV = div(u) + d(omega)/dp (s-1), zero by continuity."""
+    return divergence(u, v, geometry) + d_omega_dp
+
+
+def geopotential_flux_terms(q, phi, u, v, omega, d_phi_dp, d_omega_phi_dp, divv, geometry):
+    """The flux form of PEKE = -q u . grad(Phi). With the hydrostatic
+    specific volume alpha = -dPhi/dp,
+
+        PEKE = FOGEOP + BARCC + QPHIDIVV,
+        HFOGEOP  = -q div(Phi u)
+        FOGEOP   = HFOGEOP - q d(omega Phi)/dp     flux of geopotential
+        BARCC    = -omega alpha q                   baroclinic conversion
+        QPHIDIVV =  q Phi DIVV                      continuity closure
+
+    Returns (ALPHA, BARCC, HFOGEOP, FOGEOP, QPHIDIVV)."""
+    alpha = -d_phi_dp
+    hfogeop = -q * divergence(phi * u, phi * v, geometry)
+    return (alpha, -omega * alpha * q, hfogeop, hfogeop - q * d_omega_phi_dp,
+            q * phi * divv)

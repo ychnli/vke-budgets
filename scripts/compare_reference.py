@@ -70,7 +70,7 @@ def main():
 
     for config in args.config or ["reference"]:
         options = budget.BudgetOptions(geometry=CONFIGS[config], dyn_crosscheck=True,
-                                       ncl_vte_form=True)
+                                       ncl_vte_form=True, flux_form=True)
         t0 = time.time()
         out = budget.compute(ds, options, n_workers=args.workers)
         elapsed = time.time() - t0
