@@ -143,6 +143,20 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   skipping layers with a missing end, NCL-style two-layer d/dp, linear
   interpolation in p with no extrapolation.
 
+## Standard input and adapters
+
+- `src/vke_budgets/standard.py` defines the standard input Dataset (names,
+  dims, units) and `check_input`. Dims: `time` (window centres), `time_inst`
+  (one more; window i runs from time_inst[i] to time_inst[i+1]), `lev`
+  (pressure levels, Pa), `mlev` (model levels, bottom-up), `lat`, `lon`.
+  Instantaneous `q_inst u_inst v_inst ps_inst` on `lev`; window means
+  `p q u v phi omega` on `mlev`; optional physics tendencies
+  `du/dv/dqdt_<process>` on `lev`.
+- `src/vke_budgets/sources/merra2.py`: `find_files`, `open_day`. The result
+  is lazy (dask, one chunk per time step); one window is 0.66 GB and reads in
+  about 9 s. phi = g·H with the reference's g = 9.81 (a parameter).
+- ERA5 will need the mean state on `lev` instead of `mlev`; not supported yet.
+
 ## MERRA-2 input specifics (put these in a MERRA-2 adapter, not in the physics)
 
 - Five files per day: `tavg3_3d_qdt_Np`, `tavg3_3d_udt_Np` (physics tendencies),
