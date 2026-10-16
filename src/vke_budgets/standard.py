@@ -1,7 +1,8 @@
 """
-The standard input Dataset: what the budget code expects, from any data
-source. A source adapter (e.g. sources/merra2.py) turns raw files into this;
-the physics never sees source-specific names, units or level orders.
+The standard input Dataset: this is what the budget code expects, from any data
+source. A source adapter (e.g. sources/merra2.py) turns raw files into this
+format so that the physics doesn't have to care about source-specific names
+units or pressure level orders.
 
 Coordinates
     time       centres of the averaging windows (datetime64)
@@ -32,8 +33,7 @@ for q.
     dqdt_<process>                  for process in MOISTURE_PROCESSES
 
 Processes: moist (convection, large-scale condensation and precipitation),
-turb (turbulence), gwd (gravity-wave drag), chem (chemistry; zero in
-MERRA-2 for January 2023), ana (the analysis increment), dyn (the model's
+turb (turbulence), gwd (gravity-wave drag), chem (chemistry), ana (the analysis increment), dyn (the model's
 own dynamics, a cross-check on the dynamical terms computed offline).
 """
 import numpy as np

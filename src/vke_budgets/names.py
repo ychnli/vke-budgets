@@ -1,6 +1,6 @@
 """
 Output variable names, their budget groups, and the translation to the
-reference's names.
+some legacy names.
 
 Every budget variable is named <quantity>_<term>, with quantity `kev`
 (qK) or `vte` (q^2 K), and term named after its group:
@@ -53,32 +53,29 @@ class Term:
 
 TERMS = {
     # --- The budget, group by group ---------------------------------------
-    "tend": Term("change of the column {Q} over the window, (<E>(end) - <E>(start))/dt",
-                 None, "tend"),
+    "tend": Term("change of the column {Q} over the window, (<E>(end) - <E>(start))/dt", None, "tend"),
+    # hflux
     "hflux_ke": Term("horizontal advection of K, -q^n u.grad(K)", "HAKE", "hflux"),
-    "hflux_vapor": Term("horizontal convergence of the q^n transport, -K div(q^n u)",
-                        "HCV", "hflux"),
+    "hflux_vapor": Term("horizontal convergence of the q^n transport, -K div(q^n u)", "HCV", "hflux"),
+    # vflux
     "vflux_ke": Term("vertical advection of K, -q^n omega u.du/dp", "VAKE", "vflux"),
-    "vflux_vapor": Term("vertical convergence of the q^n transport, -K d(q^n omega)/dp",
-                        "VCV", "vflux"),
-    "pe_conversion": Term("conversion of potential energy to K, -q^n u.grad(Phi)", "PEKE",
-                          "pe_conversion"),
-    "subgrid_momentum_moist": Term("subgrid momentum forcing by moist processes "
-                                   "(convective momentum transport)", "MOKE",
-                                   "subgrid_momentum"),
-    "subgrid_momentum_turb": Term("subgrid momentum forcing by turbulence", "TOKE",
-                                  "subgrid_momentum"),
-    "subgrid_momentum_gwd": Term("subgrid momentum forcing by gravity-wave drag", "GOKE",
-                                 "subgrid_momentum"),
-    "net_vapor_source_moist": Term("net vapor source from moist processes "
-                                   "(condensation, re-evaporation)", "POV",
-                                   "net_vapor_source"),
-    "net_vapor_source_turb": Term("net vapor source from turbulence (surface evaporation, "
-                                  "mixing)", "TOV", "net_vapor_source"),
-    "net_vapor_source_chem": Term("net vapor source from chemistry", "COV",
-                                  "net_vapor_source"),
+    "vflux_vapor": Term("vertical convergence of the q^n transport, -K d(q^n omega)/dp", "VCV", "vflux"),
+    # pe conversion
+    "pe_conversion": Term("conversion of potential energy to K, -q^n u.grad(Phi)", "PEKE", "pe_conversion"),
+    # subgrid-scale momentum forcing
+    "subgrid_momentum_moist": Term("subgrid momentum forcing by moist processes (convective momentum transport)", "MOKE", "subgrid_momentum"),
+    "subgrid_momentum_turb": Term("subgrid momentum forcing by turbulence", "TOKE", "subgrid_momentum"),
+    "subgrid_momentum_gwd": Term("subgrid momentum forcing by gravity-wave drag", "GOKE", "subgrid_momentum"),
+    # vapor sources and sinks 
+    "net_vapor_source_moist": Term("net vapor source from moist processes (condensation, re-evaporation)", "POV", "net_vapor_source"),
+    "net_vapor_source_turb": Term("net vapor source from turbulence (surface evaporation, mixing)", "TOV", "net_vapor_source"),
+    "net_vapor_source_chem": Term("net vapor source from chemistry", "COV", "net_vapor_source"),
+    # analysis increment
     "analysis": Term("analysis increments of wind and vapor", "AOKEV", "analysis"),
+    
+    # boundary term
     "boundary": Term("moving lower boundary, (dps/dt) E(p_bottom)/g", "SPTE", "boundary"),
+
     # --- Diagnostics ------------------------------------------------------
     "tend_local": Term("integral of the local tendency, q^n u.du/dt + n q^(n-1) K dq/dt",
                        None),
