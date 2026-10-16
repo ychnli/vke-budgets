@@ -74,36 +74,52 @@ safe from the purge. Data and reference outputs are only in `$REF`.
 Definitions. q is specific humidity, K = (u² + v²)/2, and ⟨·⟩ = (1/g)∫ · dp over
 1000–200 hPa.
 
-| current name | definition | old NCL name |
-|---|---|---|
-| `KEV` / `IKEV` | qK / ⟨qK⟩, the budgeted quantity | `VKE1` / `IVKE1` |
-| `VTE` / `IVTE` | q²K / ⟨q²K⟩, Ong & Yang's VKE | `VKE` / `IVKE` |
-| `IVT` | \|⟨q**u**⟩\| | `IVT` |
+| package name | definition | reference name | old NCL name |
+|---|---|---|---|
+| `kev` / `vte` (instantaneous columns) | ⟨qK⟩ / ⟨q²K⟩ | `IKEV` / `IVTE` | `IVKE1` / `IVKE` |
+| `ivt` | \|⟨q**u**⟩\| | `IVT` | `IVT` |
 
-Always use the current names. The NCL names only survive in the NCL scripts.
+KEV = qK is the budgeted quantity (Zhang et al. 2026); VTE = q²K is Ong &
+Yang's "VKE". The NCL names only survive in the NCL scripts.
 
-KEV budget: ∂(qK)/∂t = q **u**·∂**u**/∂t + K ∂q/∂t. Substituting the momentum and
-moisture equations gives one term per process. Momentum-side terms end in `KE`
-(weight q**u**·); vapor-side terms end in `V` (weight K):
+**Package names (user's decision, 2026-10-15).** Every budget variable is
+`<quantity>_<term>` (`kev_…`, `vte_…`), the term named after its budget group;
+column integrals are the default, `_3d` marks the same term on levels.
+`src/vke_budgets/names.py` is the single table of names, groups, long names
+and the translation to the reference's names (used by the legacy layout);
+`docs/names.md` is generated from it (`python -m vke_budgets.names`), and a
+test checks that it is current. Use the package names everywhere except when
+talking about the reference's code or files.
 
-- `HAKE` = −q **u**·∇K, `VAKE` = −q ω **u**·∂**u**/∂p, `PEKE` = −q **u**·∇Φ (PE→KE conversion)
-- `HAV` = −K **u**·∇q, `VAV` = −K ω ∂q/∂p. Flux-form alternatives:
-  `HCV` = −K ∇·(q**u**), `VCV` = −K ∂(qω)/∂p
-- MERRA-2 physics tendencies: `MOKE`/`TOKE`/`GOKE` (moist, turbulence and
-  gravity-wave drag on **u**), `POV`/`TOV`/`COV` (moist, turbulence and
-  chemistry on q), `AOKEV` (analysis increment). `DOKE`/`DOV` use MERRA-2's own
-  DYN tendency, which is a cross-check on HA+VA+PE.
-- The `I` prefix marks the column integral. `SPTE` = (∂p_s/∂t)·KEV(p_bot)/g is
-  the Leibniz boundary term.
-- There are two tendencies. `IKEVTEND` differences the instantaneous IKEV over
-  3 h. `I_KEVTEND` integrates K ∂q/∂t + q**u**·∂**u**/∂t.
-- VTE budget, suffix `_v`: momentum terms weighted by q², vapor terms by 2qK.
-  `HCV_v` = −K∇·(q²**u**) is the user's chosen form. The `_vO` pair is the
-  NCL's commented-out −2qK∇·(q**u**) form.
-- Grouping and residual: tend = hflux (HAKE+HCV) + vflux (VAKE+VCV) + pe + cond
-  + fric + ana + spte + resid (`make_website_budget.py`). In MERRA-2 the
-  residual is about 30% of the tendency; it is about 3% when MERRA-2's DYN
-  tendencies replace the offline dynamics.
+Budget of E = qⁿK: ∂E/∂t = qⁿ **u**·∂**u**/∂t + n qⁿ⁻¹K ∂q/∂t. Groups, in
+order (`budget.groups`), with members and the reference's names:
+
+- `tend`: `kev_tend` (IKEVTEND), the change of the instantaneous column over
+  the 3 h window.
+- `hflux`: `kev_hflux_ke` = −qⁿ**u**·∇K (HAKE) + `kev_hflux_vapor` =
+  −K∇·(qⁿ**u**) (HCV); together −⟨∇·(E**u**)⟩.
+- `vflux`: `kev_vflux_ke` = −qⁿω**u**·∂**u**/∂p (VAKE) + `kev_vflux_vapor` =
+  −K∂(qⁿω)/∂p (VCV).
+- `pe_conversion`: −qⁿ**u**·∇Φ (PEKE).
+- `subgrid_momentum` (the reference's "fric"): `_moist`, `_turb`, `_gwd`
+  (MOKE, TOKE, GOKE): every parametrized force on the wind.
+- `net_vapor_source` (the reference's "cond"): `_moist`, `_turb`, `_chem`
+  (POV, TOV, COV): every source and sink of vapor.
+- `analysis` (AOKEV); `boundary` (SPTE) = (∂p_s/∂t)·E(p_bot)/g, the Leibniz
+  term; `residual` = tend minus all of the above.
+
+Diagnostics: `kev_tend_local` (I_KEVTEND, the integral of the local
+tendency); `kev_mean` (IKEVAVG); the advective form `kev_hadv_vapor`,
+`kev_vadv_vapor` (HAV, VAV); `kev_model_dynamics_momentum`/`_vapor` (DOKE,
+DOV: MERRA-2's own DYN tendencies, a cross-check on hflux + vflux +
+pe_conversion); `vte_hflux_vapor_ncl`/`vte_vflux_vapor_ncl` (HCV_vO, VCV_vO,
+the NCL's commented-out −2qK∇·(q**u**) form); the flux-form decomposition
+`kev_fluxform_*`, `kev_pe_*`, `kev_continuity_error`, `divergence_3d_error`.
+
+For VTE the momentum weight is q² and the vapor weight 2qK; `vte_hflux_vapor`
+= −K∇·(q²**u**) is the user's chosen form. In MERRA-2 the residual is about
+30% of the tendency; it is about 3% when MERRA-2's DYN tendencies replace the
+offline dynamics.
 
 ## Numerical choices of the reference (they keep the numbers as they are)
 
@@ -175,7 +191,8 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 
 - `terms.py`: one function per term, written once for E = qⁿK (n = 1 KEV,
   n = 2 VTE) with weights w_m = qⁿ (momentum side) and w_v = n qⁿ⁻¹K (vapor
-  side). HCV = −K∇·(qⁿ**u**) keeps HAKE + HCV = −∇·(E**u**) for both n.
+  side). hflux_vapor = −K∇·(qⁿ**u**) keeps hflux_ke + hflux_vapor = −∇·(E**u**)
+  for both n.
 - `budget.py`: `BudgetOptions` (geometry, quantities, g, limits, pole
   blanking at 87°, `keep_3d`, `dyn_crosscheck`, `ncl_vte_form`),
   `window_budget` (one window, pure), and `compute(ds, options, windows,
@@ -187,8 +204,9 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   interpolation and in ×9.81), and with that rounding emulated it matches to
   4e-8. The adapter now forms Φ in float64.
 - 2023-01-04 (against the full `--vte` output) reproduces it the same way.
-- `budget.groups(result, quantity)`: tend, hflux, vflux, pe, cond, fric,
-  ana, spte, resid, as in `make_website_budget.py`.
+- `budget.groups(result, quantity)`: tend, hflux, vflux, pe_conversion,
+  subgrid_momentum, net_vapor_source, analysis, boundary, residual (the
+  reference's tend … resid of `make_website_budget.py`, renamed).
 - Size of the deliberate operator changes, 2023-01-04, relative RMS of
   (default − reference): horizontal terms 0.6–1.0% away from the seam
   (IPEKE 1.5–1.8%, a near-geostrophic cancellation); 15–22% in the four
@@ -207,7 +225,7 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
 ## Output and long runs (`io.py`, `pipeline.py`, `cli.py`)
 
 - Clean layout: one file per calendar month, `budget_<first>-<last>.nc`,
-  window terms on `time`, IVT/IKEV/IVTE on `time_inst`. A file excludes the
+  window terms on `time`, ivt/kev/vte on `time_inst`. A file excludes the
   instantaneous step that closes its last window, so files never overlap and
   `io.open_budget("budget_*.nc")` opens any number of them as one lazy Dataset.
 - `open_budget` joins files with `budget.combine`, not `open_mfdataset`'s
@@ -215,7 +233,8 @@ moisture equations gives one term per process. Momentum-side terms end in `KE`
   window terms and filled the rest with NaN (a bug found by the notebook,
   fixed 2026-10-15; tests now compare values across files).
 - Legacy layout: `write_legacy` / `open_legacy`, the reference's two files per
-  day (1e15 fill, integer minutes, levels in hPa). `open_legacy` also reads
+  day, under the reference's names (`names.to_legacy` / `from_legacy`; 1e15
+  fill, integer minutes, levels in hPa). `open_legacy` also reads
   the reference's own outputs.
 - `vke-budgets run --start --end --root --out [--layout legacy] [--bits N]`:
   resumable (finished days are kept as `parts/<day>.nc` until their month

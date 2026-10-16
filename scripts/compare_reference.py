@@ -27,7 +27,7 @@ from dataclasses import replace
 import numpy as np
 import xarray as xr
 
-from vke_budgets import budget
+from vke_budgets import budget, names
 from vke_budgets.geometry import DEFAULT, REFERENCE
 from vke_budgets.sources import merra2
 
@@ -73,6 +73,7 @@ def main():
         t0 = time.time()
         out = budget.compute(ds, options, n_workers=args.workers)
         elapsed = time.time() - t0
+        out = names.to_legacy(out)          # compare under the reference's names
         if args.save:
             out.to_netcdf(f"{args.save}_{config}.nc")
 

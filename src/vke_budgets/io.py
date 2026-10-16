@@ -4,15 +4,15 @@ Writing and reading budget outputs.
 Two layouts.
 
 Clean (the default): one netCDF file per period (normally a month), with
-the window terms on `time` and the instantaneous columns (IVT, IKEV, IVTE)
-on `time_inst`. A period file holds the instantaneous steps that fall
+the window terms on `time` and the instantaneous columns (ivt, kev, vte)
+on `time_inst`, under the package's names (names.py). A period file holds the instantaneous steps that fall
 inside the period, not the one that closes its last window (it opens the
 next period), so consecutive files never overlap and open_budget can join
 any number of them into one lazy Dataset.
 
 Legacy: the reference's two files per day, analysis_AR_IVKE1_inst<date>.nc
-and analysis_AR_IVKE1_tavg<date>.nc, with the same variable names, the
-1e15 fill value, times as minutes since the first step and levels in hPa,
+and analysis_AR_IVKE1_tavg<date>.nc, with the reference's variable names
+(translated by names.to_legacy), the 1e15 fill value, times as minutes since the first step and levels in hPa,
 so that existing downstream scripts keep working.
 
 Precision. Values are stored as float32 with zlib compression. With
@@ -26,6 +26,8 @@ import os
 import numpy as np
 import pandas as pd
 import xarray as xr
+
+from . import names
 
 LEGACY_FILL = np.float32(1.0e15)
 LEGACY_UNITS = {"kg s-3": "kg / s^3", "kg s-2": "kg / s^2", "kg m-1 s-1": "kg / m / s",
@@ -114,7 +116,9 @@ def _legacy_dataset(ds, time_dim):
 
 
 def write_legacy(result, out_dir, date, complevel=0):
-    """Write one day of a budget result as the reference's two files."""
+    """Write one day of a budget result as the reference's two files, under
+    the reference's variable names."""
+    result = names.to_legacy(result)
     day = pd.Timestamp(date)
     next_day = day + pd.Timedelta(days=1)
     inst_vars = [v for v in ("IVTE", "IKEV", "IVT") if v in result]
@@ -134,8 +138,9 @@ def write_legacy(result, out_dir, date, complevel=0):
 
 def open_legacy(out_dir, dates):
     """Read legacy-layout days (a date or a list of YYYYMMDD) into the
-    clean layout: window terms on `time`, IVT/IKEV/IVTE on `time_inst`,
-    levels in Pa. Works for the reference's own output files too."""
+    clean layout: the package's names, window terms on `time`, ivt/kev/vte
+    on `time_inst`, levels in Pa. Works for the reference's own output files
+    too."""
     dates = [dates] if isinstance(dates, str) else list(dates)
     inst, tavg = [], []
     for date in dates:
@@ -146,4 +151,4 @@ def open_legacy(out_dir, dates):
                   combine_attrs="drop_conflicts")
     if "lev" in ds.dims:
         ds = ds.assign_coords(lev=("lev", ds["lev"].values * 100.0, {"units": "Pa"}))
-    return ds
+    return names.from_legacy(ds)

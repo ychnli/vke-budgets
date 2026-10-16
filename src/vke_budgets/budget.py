@@ -12,16 +12,15 @@ For each window:
    derivatives along pressure surfaces.
 4. Integrate each term over the column, p_bottom to p_top (1000-200 hPa).
 5. Add the tendencies from the instantaneous fields at the two ends of the
-   window: I{E}TEND = (<E>(end) - <E>(start)) / dt, and SPTE.
+   window: tend = (<E>(end) - <E>(start)) / dt, and the boundary term.
 
-The budget closes as
+The budget closes as (see groups and names.py)
 
-    I{E}TEND = IHAKE + IHCV + IVAKE + IVCV + IPEKE + (physics) + IAOKEV
-               + SPTE + residual,
+    tend = hflux + vflux + pe_conversion + subgrid_momentum
+           + net_vapor_source + analysis + boundary + residual.
 
-where (physics) is the sum of the momentum and moisture physics terms
-present in the input. Output names follow the reference: an "I" prefix
-marks a column integral, and the VTE budget carries the suffix "_v".
+Variables are named <quantity>_<term> (kev_hflux_ke, vte_hflux_ke, ...);
+names.py has every name, its group, and the reference's name for it.
 """
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -29,55 +28,20 @@ from dataclasses import dataclass
 import numpy as np
 import xarray as xr
 
-from . import terms
+from . import names, terms
 from .geometry import DEFAULT, HorizontalGeometry
 from .standard import check_input, physics_processes
 from .vertical import GRAVITY, PressureInterpolator, bottom_value, ddp, integrate_column
 
 # Budgeted quantities E = q^n K: name -> n.
 QUANTITIES = {"KEV": 1, "VTE": 2}
+QUANTITY_PREFIX = names.QUANTITY_PREFIX
 
-# Physics tendencies -> term names (before the VTE suffix).
-MOMENTUM_TERMS = {"moist": "MOKE", "turb": "TOKE", "gwd": "GOKE", "dyn": "DOKE"}
-MOISTURE_TERMS = {"moist": "POV", "turb": "TOV", "chem": "COV", "dyn": "DOV"}
-
-LONG_NAMES = {
-    "HAKE": "horizontal advection of KE",
-    "VAKE": "vertical advection of KE",
-    "PEKE": "potential energy conversion to KE",
-    "HAV": "horizontal advection of vapor",
-    "VAV": "vertical advection of vapor",
-    "HCV": "horizontal convergence of vapor transport, -K div(q^n u)",
-    "VCV": "vertical convergence of vapor transport, -K d(q^n omega)/dp",
-    "HCV_vO": "horizontal convergence, -2qK div(q u) (NCL commented-out form)",
-    "VCV_vO": "vertical convergence, -2qK d(q omega)/dp (NCL commented-out form)",
-    "MOKE": "moist processes on KE",
-    "TOKE": "turbulence on KE",
-    "GOKE": "gravity-wave drag on KE",
-    "DOKE": "MERRA-2 dynamics on KE",
-    "POV": "moist processes on vapor",
-    "TOV": "turbulence on vapor",
-    "COV": "chemistry on vapor",
-    "DOV": "MERRA-2 dynamics on vapor",
-    "AOKEV": "analysis increments",
-}
-
-# Flux-form diagnostics (KEV only): name -> (long name, 3D units, column units).
-FLUX_FORM = {
-    "HFOKE": ("horizontal flux of KE, -q div(K u)", "m2 s-3", "kg s-3"),
-    "VFOKE": ("vertical flux of KE, -q d(K omega)/dp", "m2 s-3", "kg s-3"),
-    "HFOV": ("horizontal flux of vapor, = HCV", "m2 s-3", "kg s-3"),
-    "VFOV": ("vertical flux of vapor, = VCV", "m2 s-3", "kg s-3"),
-    "HFADT": ("horizontal divergence cross term, q K div(u)", "m2 s-3", "kg s-3"),
-    "VFADT": ("vertical divergence cross term, q K d(omega)/dp", "m2 s-3", "kg s-3"),
-    "DIVV": ("divergence of the 3D wind, div(u) + d(omega)/dp", "s-1", "kg m-2 s-1"),
-    "QKDIVV": ("2 q K DIVV, flux-to-advection form", "m2 s-3", "kg s-3"),
-    "ALPHA": ("specific volume, -dPhi/dp", "m3 kg-1", None),
-    "BARCC": ("baroclinic conversion, -omega alpha q", "m2 s-3", "kg s-3"),
-    "HFOGEOP": ("horizontal flux of geopotential, -q div(Phi u)", "m2 s-3", "kg s-3"),
-    "FOGEOP": ("flux of geopotential", "m2 s-3", "kg s-3"),
-    "QPHIDIVV": ("q Phi DIVV, geopotential closure", "m2 s-3", "kg s-3"),
-}
+# Physics tendencies -> terms (see names.py).
+MOMENTUM_TERMS = {"moist": "subgrid_momentum_moist", "turb": "subgrid_momentum_turb",
+                  "gwd": "subgrid_momentum_gwd", "dyn": "model_dynamics_momentum"}
+MOISTURE_TERMS = {"moist": "net_vapor_source_moist", "turb": "net_vapor_source_turb",
+                  "chem": "net_vapor_source_chem", "dyn": "model_dynamics_vapor"}
 
 
 @dataclass(frozen=True)
@@ -94,11 +58,15 @@ class BudgetOptions:
             are set to NaN, where the lat-lon grid is too distorted for
             finite differences. None keeps everything.
         keep_3d: also return the terms on pressure levels.
-        dyn_crosscheck: also compute DOKE and DOV from the model's own
-            dynamics tendencies, a cross-check on HAKE + VAKE + PEKE etc.
-        ncl_vte_form: also compute HCV_vO and VCV_vO for VTE.
+        dyn_crosscheck: also compute the terms of the model's own dynamics
+            tendencies of the wind (model_dynamics_momentum, DOKE in the
+            reference) and of vapor (model_dynamics_vapor, DOV), a
+            cross-check on hflux + vflux + pe_conversion.
+        ncl_vte_form: also compute vte_hflux_vapor_ncl and
+            vte_vflux_vapor_ncl, the form commented out in the NCL.
         flux_form: also compute the flux-form decomposition of the KEV
-            budget (HFOKE ... QPHIDIVV, see terms.py).
+            budget (kev_fluxform_* and the continuity diagnostics, see
+            terms.py).
     """
     geometry: HorizontalGeometry = DEFAULT
     quantities: tuple = ("KEV", "VTE")
@@ -112,23 +80,22 @@ class BudgetOptions:
     flux_form: bool = False
 
 
-def _name(term, quantity):
-    """Output name of `term` in the budget of `quantity`."""
-    return term if quantity == "KEV" else f"{term}_v"
-
-
 def instantaneous_columns(inst, options=BudgetOptions()):
     """Column integrals of the instantaneous state (dims time_inst, lat, lon):
-    IVT = |<q u>| (kg m-1 s-1), and I<E> = <q^n K> (kg s-2) for each budget."""
+    ivt = |<q u>| (kg m-1 s-1), and kev = <q K>, vte = <q^2 K> (kg s-2)."""
     integ = _integrator(options)
     q, u, v = inst["q_inst"], inst["u_inst"], inst["v_inst"]
     k = terms.kinetic_energy(u, v)
-    out = {"IVT": np.hypot(integ(q * u), integ(q * v)).assign_attrs(
-        units="kg m-1 s-1", long_name="integrated vapor transport")}
+    out = {"ivt": np.hypot(integ(q * u), integ(q * v)).assign_attrs(_shared_attrs("ivt"))}
     for quantity in options.quantities:
-        out[f"I{quantity}"] = integ(q ** QUANTITIES[quantity] * k).assign_attrs(
-            units="kg s-2", long_name=f"column {quantity}, q^{QUANTITIES[quantity]} K")
+        column = QUANTITY_PREFIX[quantity]
+        out[column] = integ(q ** QUANTITIES[quantity] * k).assign_attrs(_shared_attrs(column))
     return xr.Dataset(out)
+
+
+def _shared_attrs(new):
+    legacy, long_name, units = names.SHARED[new]
+    return {"units": units, "long_name": long_name, "legacy_name": legacy}
 
 
 def _integrator(options):
@@ -193,21 +160,27 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
 
     momentum, moisture = physics_processes(window)
     out = {}
+
+    def add(term, quantity, field):
+        """The column integral of a term, and the term itself with keep_3d."""
+        out[names.name(term, quantity)] = integ(field).assign_attrs(names.attrs(term, quantity))
+        if options.keep_3d:
+            out[names.name(term, quantity, True)] = field.assign_attrs(
+                names.attrs(term, quantity, True))
+
     for quantity in options.quantities:
         n = QUANTITIES[quantity]
         w_m, w_v = terms.weights(q, k, n)
         e = w_m * k
 
-        # 3. Terms on pressure levels (m2 s-3).
+        # 3. Terms on pressure levels (m2 s-3), by group.
         fields = {
-            "HAKE": terms.horizontal_advection_of_ke(w_m, u, v, k, geom),
-            "VAKE": terms.vertical_advection_of_ke(w_m, u, v, pieces["omega_dudp"],
-                                                   pieces["omega_dvdp"]),
-            "PEKE": terms.pe_to_ke_conversion(w_m, u, v, phi, geom),
-            "HAV": terms.horizontal_advection_of_vapor(w_v, u, v, q, geom),
-            "VAV": terms.vertical_advection_of_vapor(w_v, pieces["omega_dqdp"]),
-            "HCV": terms.horizontal_convergence_of_vapor(k, w_m, u, v, geom),
-            "VCV": terms.vertical_convergence_of_vapor(k, pieces[f"d_q{n}omega_dp"]),
+            "hflux_ke": terms.horizontal_advection_of_ke(w_m, u, v, k, geom),
+            "hflux_vapor": terms.horizontal_convergence_of_vapor(k, w_m, u, v, geom),
+            "vflux_ke": terms.vertical_advection_of_ke(w_m, u, v, pieces["omega_dudp"],
+                                                       pieces["omega_dvdp"]),
+            "vflux_vapor": terms.vertical_convergence_of_vapor(k, pieces[f"d_q{n}omega_dp"]),
+            "pe_conversion": terms.pe_to_ke_conversion(w_m, u, v, phi, geom),
         }
         for proc, term in MOMENTUM_TERMS.items():
             if proc in momentum and (proc != "dyn" or options.dyn_crosscheck):
@@ -217,41 +190,44 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
             if proc in moisture and (proc != "dyn" or options.dyn_crosscheck):
                 fields[term] = terms.moisture_physics(w_v, window[f"dqdt_{proc}"])
         if "ana" in momentum and "ana" in moisture:
-            fields["AOKEV"] = (terms.momentum_physics(w_m, u, v, window["dudt_ana"],
-                                                      window["dvdt_ana"])
-                               + terms.moisture_physics(w_v, window["dqdt_ana"]))
+            fields["analysis"] = (terms.momentum_physics(w_m, u, v, window["dudt_ana"],
+                                                         window["dvdt_ana"])
+                                  + terms.moisture_physics(w_v, window["dqdt_ana"]))
+        # Diagnostics: the advective form of the vapor terms, and the NCL form.
+        fields["hadv_vapor"] = terms.horizontal_advection_of_vapor(w_v, u, v, q, geom)
+        fields["vadv_vapor"] = terms.vertical_advection_of_vapor(w_v, pieces["omega_dqdp"])
         if options.ncl_vte_form and n == 2:
-            fields["HCV_vO"], fields["VCV_vO"] = terms.ncl_convergence_of_vapor(
-                w_v, q, u, v, pieces["d_q1omega_dp"], geom)
-        tend = terms.local_tendency(w_m, w_v, u, v, dqdt, dudt, dvdt)
+            fields["hflux_vapor_ncl"], fields["vflux_vapor_ncl"] = \
+                terms.ncl_convergence_of_vapor(w_v, q, u, v, pieces["d_q1omega_dp"], geom)
+        fields["tend_local"] = terms.local_tendency(w_m, w_v, u, v, dqdt, dudt, dvdt)
+        fields["mean"] = e
 
-        # 4. Column integrals (kg s-3).
-        for term, f in fields.items():
-            name = term if term.endswith("_vO") else _name(term, quantity)
-            out[f"I{name}"] = integ(f).assign_attrs(
-                units="kg s-3", long_name=f"I{quantity} tendency, {LONG_NAMES[term]}")
-            if options.keep_3d:
-                out[name] = f.assign_attrs(
-                    units="m2 s-3", long_name=f"{quantity} tendency, {LONG_NAMES[term]}")
-        out[f"I{quantity}AVG"] = integ(e).assign_attrs(
-            units="kg s-2", long_name=f"column {quantity}, window mean")
-        out[f"I_{quantity}TEND"] = integ(tend).assign_attrs(
-            units="kg s-3", long_name=f"integral of the local {quantity} tendency")
+        # 4. Column integrals (kg s-3; kg s-2 for the mean).
+        for term, field in fields.items():
+            add(term, quantity, field)
 
-        # 5. Tendency of the column integral, and the boundary term.
-        out[f"I{quantity}TEND"] = ((inst_end[f"I{quantity}"] - inst_start[f"I{quantity}"]) / dt
-                                   ).assign_attrs(units="kg s-3",
-                                                  long_name=f"I{quantity} tendency")
-        out[_name("SPTE", quantity)] = terms.surface_pressure_term(
+        # 5. Change of the instantaneous column over the window, and the
+        #    moving lower boundary.
+        column = QUANTITY_PREFIX[quantity]
+        out[names.name("tend", quantity)] = (
+            (inst_end[column] - inst_start[column]) / dt).assign_attrs(
+            names.attrs("tend", quantity))
+        out[names.name("boundary", quantity)] = terms.surface_pressure_term(
             dpsdt, bottom_value(e, dim="lev"), options.g).assign_attrs(
-            units="kg s-3", long_name=f"surface pressure tendency effect on I{quantity}")
-        if options.keep_3d:
-            out[quantity] = e.assign_attrs(units="m2 s-2", long_name=f"{quantity}, q^{n} K")
-            out[f"{quantity}TEND"] = tend.assign_attrs(
-                units="m2 s-3", long_name=f"local {quantity} tendency")
+            names.attrs("boundary", quantity))
 
     if options.flux_form:
-        out.update(_flux_form(q, k, u, v, phi, pieces, out, options))
+        for term, field in _flux_form(q, k, u, v, phi, pieces, geom).items():
+            if term in names.TERMS:
+                add(term, "KEV", field)
+        divv = terms.three_d_divergence(u, v, pieces["d_omega_dp"], geom)
+        out["divergence_3d_error"] = integ(divv).assign_attrs(
+            _shared_attrs("divergence_3d_error"))
+        if options.keep_3d:
+            out["divergence_3d_error_3d"] = divv.assign_attrs(
+                _shared_attrs("divergence_3d_error_3d"))
+            out["specific_volume_3d"] = (-pieces["d_phi_dp"]).assign_attrs(
+                _shared_attrs("specific_volume_3d"))
 
     result = xr.Dataset(out)
     if options.pole_lat_limit is not None:
@@ -259,33 +235,25 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
     return result
 
 
-def _flux_form(q, k, u, v, phi, pieces, out, options):
-    """The flux-form diagnostics of the KEV budget, integrated (and 3D with
-    keep_3d)."""
-    geom, integ = options.geometry, _integrator(options)
+def _flux_form(q, k, u, v, phi, pieces, geom):
+    """The flux-form decomposition of the KEV budget on pressure levels
+    (see terms.py), by term name."""
     divv = terms.three_d_divergence(u, v, pieces["d_omega_dp"], geom)
-    alpha, barcc, hfogeop, fogeop, qphidivv = terms.geopotential_flux_terms(
+    _, barcc, hfogeop, fogeop, qphidivv = terms.geopotential_flux_terms(
         q, phi, u, v, pieces["omega"], pieces["d_phi_dp"], pieces["d_omegaphi_dp"], divv, geom)
-    fields = {
-        "HFOKE": terms.horizontal_flux_of_ke(q, k, u, v, geom),
-        "VFOKE": terms.vertical_flux_of_ke(q, pieces["d_komega_dp"]),
-        "HFOV": terms.horizontal_convergence_of_vapor(k, q, u, v, geom),
-        "VFOV": terms.vertical_convergence_of_vapor(k, pieces["d_q1omega_dp"]),
-        "HFADT": terms.horizontal_divergence_cross_term(q, k, u, v, geom),
-        "VFADT": terms.vertical_divergence_cross_term(q, k, pieces["d_omega_dp"]),
-        "DIVV": divv,
-        "QKDIVV": 2.0 * q * k * divv,
-        "ALPHA": alpha, "BARCC": barcc, "HFOGEOP": hfogeop, "FOGEOP": fogeop,
-        "QPHIDIVV": qphidivv,
+    return {
+        "fluxform_hflux_ke": terms.horizontal_flux_of_ke(q, k, u, v, geom),
+        "fluxform_vflux_ke": terms.vertical_flux_of_ke(q, pieces["d_komega_dp"]),
+        "fluxform_hflux_vapor": terms.horizontal_convergence_of_vapor(k, q, u, v, geom),
+        "fluxform_vflux_vapor": terms.vertical_convergence_of_vapor(k, pieces["d_q1omega_dp"]),
+        "fluxform_hcross": terms.horizontal_divergence_cross_term(q, k, u, v, geom),
+        "fluxform_vcross": terms.vertical_divergence_cross_term(q, k, pieces["d_omega_dp"]),
+        "continuity_error": 2.0 * q * k * divv,
+        "pe_baroclinic": barcc,
+        "pe_hflux_geopotential": hfogeop,
+        "pe_flux_geopotential": fogeop,
+        "pe_continuity_error": qphidivv,
     }
-    result = {}
-    for name, f in fields.items():
-        long_name, units_3d, units_col = FLUX_FORM[name]
-        if units_col is not None:
-            result[f"I{name}"] = integ(f).assign_attrs(units=units_col, long_name=long_name)
-        if options.keep_3d:
-            result[name] = f.assign_attrs(units=units_3d, long_name=long_name)
-    return result
 
 
 INST_INPUTS = ["q_inst", "u_inst", "v_inst", "ps_inst"]
@@ -313,7 +281,7 @@ def iter_windows(ds, options=BudgetOptions(), windows=None, n_workers=1, progres
                                seconds[i], options)
         result = result.drop_vars(["time", "time_inst"], errors="ignore")
         result = result.expand_dims(time=[window["time"].values])
-        columns = inst[["IVT"] + [f"I{qn}" for qn in options.quantities]]
+        columns = inst[["ivt"] + [QUANTITY_PREFIX[qn] for qn in options.quantities]]
         if progress:
             print(f"  window {str(window['time'].values)[:16]}", flush=True)
         return xr.merge([result, columns])
@@ -355,7 +323,7 @@ def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=Fal
         progress: print one line per window.
     Returns:
         Dataset with the window terms on `time` and the instantaneous column
-        integrals (IVT, IKEV, IVTE) on `time_inst`, for the selected windows
+        integrals (ivt, kev, vte) on `time_inst`, for the selected windows
         and the instantaneous steps that bound them.
     """
     parts = list(iter_windows(ds, options, windows, n_workers, progress))
@@ -364,46 +332,33 @@ def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=Fal
                  "options": repr(options)}
     return out
 
-GROUPS = {
-    "hflux": ("HAKE", "HCV"),
-    "vflux": ("VAKE", "VCV"),
-    "pe": ("PEKE",),
-    "cond": ("POV", "TOV", "COV"),
-    "fric": ("MOKE", "TOKE", "GOKE"),
-    "ana": ("AOKEV",),
-}
-
-
 def groups(result, quantity="KEV"):
-    """The budget of `quantity` in groups, as in the reference's
-    make_website_budget.py (kg s-3):
+    """The budget of `quantity` in groups (kg s-3), in budget order:
 
-        tend  = I{E}TEND, the change of the instantaneous column over the window
-        hflux = IHAKE + IHCV = -<div(E u)>
-        vflux = IVAKE + IVCV = -<d(E omega)/dp>
-        pe    = IPEKE
-        cond  = IPOV + ITOV + ICOV, all the vapor-side physics
-        fric  = IMOKE + ITOKE + IGOKE, all the momentum-side physics
-        ana   = IAOKEV
-        spte  = SPTE
-        resid = tend - (the seven groups above)
+        tend             change of the column over the window
+        hflux            hflux_ke + hflux_vapor = -<div(E u)>
+        vflux            vflux_ke + vflux_vapor = -<d(E omega)/dp>
+        pe_conversion    conversion of potential energy to K
+        subgrid_momentum subgrid-scale momentum forcing: turbulence,
+                         convection, gravity-wave drag ("fric" in the reference)
+        net_vapor_source every source and sink of vapor: moist processes,
+                         turbulence, chemistry ("cond" in the reference)
+        analysis         analysis increments
+        boundary         moving lower boundary
+        residual         tend minus all of the above
 
-    "cond" and "fric" are the reference's names; cond includes turbulence
-    (surface evaporation and mixing) and fric includes moist processes
-    (convective momentum transport). Terms missing from `result` (e.g. no
-    physics in ERA5) count as zero, so the residual absorbs them.
+    Groups whose terms are missing from `result` (e.g. no physics in ERA5)
+    count as zero, so the residual absorbs them.
     """
-    def column(term):
-        name = f"I{_name(term, quantity)}"
-        return result[name] if name in result else 0.0
-
-    out = {"tend": result[f"I{quantity}TEND"]}
-    for group, members in GROUPS.items():
-        out[group] = sum(column(t) for t in members)
-    out["spte"] = result[_name("SPTE", quantity)]
-    out["resid"] = out["tend"] - sum(out[g] for g in list(GROUPS) + ["spte"])
-    ds = xr.Dataset({g: v if isinstance(v, xr.DataArray) else xr.zeros_like(out["tend"])
-                     for g, v in out.items()})
-    for v in ds.data_vars.values():
-        v.attrs = {"units": "kg s-3"}
+    tend = result[names.name("tend", quantity)]
+    out = {}
+    for group in names.GROUPS:
+        present = [result[names.name(t, quantity)] for t in names.members(group)
+                   if names.name(t, quantity) in result]
+        out[group] = sum(present) if present else xr.zeros_like(tend)
+    out["residual"] = tend - sum(out[g] for g in names.GROUPS if g != "tend")
+    ds = xr.Dataset(out)
+    for group, da in ds.data_vars.items():
+        da.attrs = {"units": "kg s-3", "long_name": f"{quantity} budget: "
+                    f"{names.GROUP_LONG_NAMES[group]}"}
     return ds

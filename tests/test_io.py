@@ -29,7 +29,7 @@ def test_clean_round_trip_drops_the_closing_step(tmp_path):
     assert back.sizes["time_inst"] == 8
     xr.testing.assert_allclose(back.drop_dims("time_inst"),
                                result.drop_dims("time_inst").astype("float32"))
-    xr.testing.assert_allclose(back["IKEV"], result["IKEV"].isel(time_inst=slice(0, 8)).astype("float32"))
+    xr.testing.assert_allclose(back["kev"], result["kev"].isel(time_inst=slice(0, 8)).astype("float32"))
 
 
 def test_consecutive_files_open_as_one(tmp_path):
@@ -56,7 +56,7 @@ def test_bitround_precision(tmp_path):
     path = str(tmp_path / "rounded.nc")
     io.write_period(result, path, significant_bits=12)
     back = io.open_budget(path).load()
-    a, b = back["ITOKE"].values, result["ITOKE"].values
+    a, b = back["kev_subgrid_momentum_turb"].values, result["kev_subgrid_momentum_turb"].values
     ok = np.isfinite(b)
     assert 0 < np.abs(a[ok] / b[ok] - 1).max() < 2.0**-12
 
@@ -75,9 +75,11 @@ def test_legacy_layout_round_trip(tmp_path):
         assert f["time"].units == "minutes since 2023-01-04 00:00:00"
         assert f.dimensions["time"].size == 8
     back = io.open_legacy(str(tmp_path), "20230104")
-    xr.testing.assert_allclose(back["IHAKE"], result["IHAKE"].astype("float32"))
-    xr.testing.assert_allclose(back["HAKE"], result["HAKE"].astype("float32"))
-    xr.testing.assert_allclose(back["IVT"], result["IVT"].isel(time_inst=slice(0, 8)).astype("float32"))
+    # Every variable comes back under the package's name.
+    assert set(back.data_vars) == set(result.data_vars)
+    xr.testing.assert_allclose(back["kev_hflux_ke"], result["kev_hflux_ke"].astype("float32"))
+    xr.testing.assert_allclose(back["kev_hflux_ke_3d"], result["kev_hflux_ke_3d"].astype("float32"))
+    xr.testing.assert_allclose(back["ivt"], result["ivt"].isel(time_inst=slice(0, 8)).astype("float32"))
 
 
 # The reference's 2017-07-12 outputs (analysis_AR_IVKE1_{inst,tavg}20170712.nc).
@@ -88,9 +90,10 @@ REF_2017 = os.environ.get("VKE_TEST_REFERENCE", "")
 def test_open_legacy_reads_the_reference_files():
     ref = io.open_legacy(REF_2017, "20170712")
     assert ref.sizes["time"] == 8 and ref.sizes["time_inst"] == 8
-    assert ref["IHAKE"].dims == ("time", "lat", "lon")
+    assert ref["kev_hflux_ke"].dims == ("time", "lat", "lon")
+    assert "vte_hflux_vapor_ncl" in ref and "kev_fluxform_hflux_ke" in ref
     assert str(ref["time"].values[0])[:16] == "2017-07-12T01:30"
-    assert np.isnan(ref["IHAKE"].values[0, 0]).all()        # pole rows blanked, fill decoded
+    assert np.isnan(ref["kev_hflux_ke"].values[0, 0]).all()        # pole rows blanked, fill decoded
 
 
 def fake_source(calls):
@@ -111,10 +114,10 @@ def test_pipeline_months_and_resume(tmp_path):
     assert calls == ["20230130", "20230131", "20230201"]
     # Every day's values made it into the month files (not only the first).
     inner = np.abs(both["lat"]) < 87
-    assert np.isfinite(both["ITOKE"].where(inner, 0.0)).all()
+    assert np.isfinite(both["kev_subgrid_momentum_turb"].where(inner, 0.0)).all()
     one_day = budget.compute(solid_body(n_time=8, drag=1e-5, start="2023-01-31"))
-    xr.testing.assert_allclose(both["ITOKE"].sel(time=one_day["time"]),
-                               one_day["ITOKE"].astype("float32"))
+    xr.testing.assert_allclose(both["kev_subgrid_momentum_turb"].sel(time=one_day["time"]),
+                               one_day["kev_subgrid_momentum_turb"].astype("float32"))
 
     # Rerun: complete months are skipped.
     pipeline.run("2023-01-30", "2023-02-01", None, out, open_day=fake_source(calls), log=None)

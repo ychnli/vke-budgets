@@ -17,6 +17,9 @@ The product rule gives
 so every momentum term carries the weight w_m = q^n (times u .), and every
 vapor term the weight w_v = n q^(n-1) K. For KEV, w_m = q and w_v = K.
 
+Below, each term has its output name (names.py, without the kev_/vte_
+prefix) and, in parentheses, the reference's name.
+
 Substituting the momentum equation,
 
     du/dt = -u . grad(u) - omega du/dp - grad(Phi) - f k x u + F,
@@ -24,32 +27,35 @@ Substituting the momentum equation,
 and noting that u . (u . grad u) = u . grad K and u . (k x u) = 0 (the
 Coriolis force does no work), the momentum side becomes
 
-    HAKE = -w_m u . grad K                    horizontal advection of K
-    VAKE = -w_m omega (u du/dp + v dv/dp)     vertical advection of K
-    PEKE = -w_m u . grad Phi                  conversion of potential energy to K
-    xOKE =  w_m u . F_x                       momentum physics, process x
+    hflux_ke (HAKE)      = -w_m u . grad K                 horizontal advection of K
+    vflux_ke (VAKE)      = -w_m omega (u du/dp + v dv/dp)  vertical advection of K
+    pe_conversion (PEKE) = -w_m u . grad Phi               potential energy to K
+    subgrid_momentum_x   =  w_m u . F_x                    parametrized force F_x:
+      (MOKE, TOKE, GOKE)                                   moist, turb, gwd
 
 Substituting the moisture equation dq/dt = -u . grad q - omega dq/dp + S,
 the vapor side becomes
 
-    HAV  = -w_v u . grad q                    horizontal advection of q
-    VAV  = -w_v omega dq/dp                   vertical advection of q
-    xOV  =  w_v S_x                           moisture physics, process x
+    hadv_vapor (HAV)     = -w_v u . grad q                 horizontal advection of q
+    vadv_vapor (VAV)     = -w_v omega dq/dp                vertical advection of q
+    net_vapor_source_x   =  w_v S_x                        source or sink S_x:
+      (POV, TOV, COV)                                      moist, turb, chem
 
-Flux form. The convergence terms
+Flux form. The budget uses, in place of the advection of q, the convergence
+terms
 
-    HCV  = -K div(q^n u),     VCV = -K d(q^n omega)/dp
+    hflux_vapor (HCV) = -K div(q^n u),   vflux_vapor (VCV) = -K d(q^n omega)/dp
 
-are chosen so that HAKE + HCV = -div(E u) and VAKE + VCV = -d(E omega)/dp
-exactly: hflux = HAKE + HCV and vflux = VAKE + VCV are the horizontal and
+chosen so that hflux_ke + hflux_vapor = -div(E u) and vflux_ke + vflux_vapor
+= -d(E omega)/dp exactly: the groups hflux and vflux are the horizontal and
 vertical flux divergences of E. Continuity, div(u) + d(omega)/dp = 0, makes
-HCV + VCV = HAV + VAV; on real data the two pairs differ by the discrete
-continuity error E (div u + d omega/dp).
+hflux_vapor + vflux_vapor = hadv_vapor + vadv_vapor; on real data the two
+pairs differ by the discrete continuity error E (div u + d omega/dp).
 
-For n = 2 the reference also writes HCV_vO = -w_v div(q u) and
-VCV_vO = -w_v d(q omega)/dp, the form commented out in the original NCL.
-Their sum differs from HCV + VCV by q^2 K (div u + d omega/dp), which
-vanishes only by continuity.
+For n = 2 the reference also writes hflux_vapor_ncl (HCV_vO) =
+-w_v div(q u) and vflux_vapor_ncl (VCV_vO) = -w_v d(q omega)/dp, the form
+commented out in the original NCL. Their sum differs from the flux form's by
+q^2 K (div u + d omega/dp), which vanishes only by continuity.
 
 The functions below take DataArrays on pressure levels and are pure.
 """
@@ -72,21 +78,21 @@ def weights(q, k, n):
 # --- Momentum side --------------------------------------------------------
 
 def horizontal_advection_of_ke(w_m, u, v, k, geometry):
-    """HAKE = -w_m (u dK/dx + v dK/dy)."""
+    """hflux_ke (HAKE) = -w_m (u dK/dx + v dK/dy)."""
     dkdx, dkdy = gradient(k, geometry)
     return -w_m * (u * dkdx + v * dkdy)
 
 
 def vertical_advection_of_ke(w_m, u, v, omega_dudp, omega_dvdp):
-    """VAKE = -w_m (u omega du/dp + v omega dv/dp). The products omega du/dp
+    """vflux_ke (VAKE) = -w_m (u omega du/dp + v omega dv/dp). The products omega du/dp
     are formed on model levels, where the vertical derivative is taken, and
     then interpolated (see budget.py)."""
     return -w_m * (u * omega_dudp + v * omega_dvdp)
 
 
 def pe_to_ke_conversion(w_m, u, v, phi, geometry):
-    """PEKE = -w_m (u dPhi/dx + v dPhi/dy): work done by the pressure-gradient
-    force, which on pressure surfaces is the geopotential gradient. It
+    """pe_conversion (PEKE) = -w_m (u dPhi/dx + v dPhi/dy): work done by the pressure-gradient
+    force, which on pressure surfaces is the gradient of geopotential (phi). It
     converts potential energy into K."""
     dphidx, dphidy = gradient(phi, geometry)
     return -w_m * (u * dphidx + v * dphidy)
@@ -94,46 +100,51 @@ def pe_to_ke_conversion(w_m, u, v, phi, geometry):
 
 def momentum_physics(w_m, u, v, dudt, dvdt):
     """w_m (u du/dt + v dv/dt) for a physics tendency (du/dt, dv/dt) of the
-    wind: MOKE (moist), TOKE (turbulence), GOKE (gravity-wave drag), DOKE
-    (MERRA-2's dynamics), and the momentum half of AOKEV (analysis)."""
+    wind: subgrid_momentum_moist, _turb, _gwd (MOKE, TOKE, GOKE),
+    model_dynamics_momentum (DOKE), and the momentum half of analysis
+    (AOKEV)."""
     return w_m * (u * dudt + v * dvdt)
 
 
 # --- Vapor side -----------------------------------------------------------
 
 def horizontal_advection_of_vapor(w_v, u, v, q, geometry):
-    """HAV = -w_v (u dq/dx + v dq/dy)."""
+    """hadv_vapor (HAV) = -w_v (u dq/dx + v dq/dy)."""
     dqdx, dqdy = gradient(q, geometry)
     return -w_v * (u * dqdx + v * dqdy)
 
 
 def vertical_advection_of_vapor(w_v, omega_dqdp):
-    """VAV = -w_v omega dq/dp, with omega dq/dp formed on model levels."""
+    """vadv_vapor (VAV) = -w_v omega dq/dp, with omega dq/dp formed on
+    model levels."""
     return -w_v * omega_dqdp
 
 
 def horizontal_convergence_of_vapor(k, w_m, u, v, geometry):
-    """HCV = -K div(q^n u), where w_m = q^n. With HAKE it makes the
-    horizontal flux divergence -div(E u)."""
+    """hflux_vapor (HCV) = -K div(q^n u), where w_m = q^n. With hflux_ke it
+    makes the horizontal flux divergence -div(E u)."""
     return -k * divergence(w_m * u, w_m * v, geometry)
 
 
 def vertical_convergence_of_vapor(k, d_wm_omega_dp):
-    """VCV = -K d(q^n omega)/dp, with the derivative taken on model levels.
-    With VAKE it makes the vertical flux divergence -d(E omega)/dp."""
+    """vflux_vapor (VCV) = -K d(q^n omega)/dp, with the derivative taken on
+    model levels. With vflux_ke it makes the vertical flux divergence
+    -d(E omega)/dp."""
     return -k * d_wm_omega_dp
 
 
 def ncl_convergence_of_vapor(w_v, q, u, v, d_q_omega_dp, geometry):
-    """(HCV_vO, VCV_vO) = (-w_v div(q u), -w_v d(q omega)/dp): the form
-    commented out in the original NCL, kept for comparison. For n = 1 it is
-    the same as (HCV, VCV)."""
+    """(hflux_vapor_ncl, vflux_vapor_ncl) = (-w_v div(q u), -w_v d(q omega)/dp),
+    HCV_vO and VCV_vO in the reference: the form commented out in the
+    original NCL, kept for comparison. For n = 1 it equals (hflux_vapor,
+    vflux_vapor)."""
     return -w_v * divergence(q * u, q * v, geometry), -w_v * d_q_omega_dp
 
 
 def moisture_physics(w_v, dqdt):
-    """w_v dq/dt for a physics tendency of q: POV (moist), TOV (turbulence),
-    COV (chemistry), DOV (MERRA-2's dynamics), and the vapor half of AOKEV."""
+    """w_v dq/dt for a physics tendency of q: net_vapor_source_moist, _turb,
+    _chem (POV, TOV, COV), model_dynamics_vapor (DOV), and the vapor half of
+    analysis (AOKEV)."""
     return w_v * dqdt
 
 
@@ -141,13 +152,14 @@ def moisture_physics(w_v, dqdt):
 
 def local_tendency(w_m, w_v, u, v, dqdt, dudt, dvdt):
     """dE/dt = w_m (u du/dt + v dv/dt) + w_v dq/dt, from the change of the
-    instantaneous q, u, v across the window (KEVTEND, VTETEND)."""
+    instantaneous q, u, v across the window: tend_local (KEVTEND,
+    VTETEND)."""
     return w_m * (u * dudt + v * dvdt) + w_v * dqdt
 
 
 def surface_pressure_term(dpsdt, e_bottom, g):
-    """SPTE = (dps/dt) E(p_bottom) / g (kg s-3): the Leibniz term for a column
-    whose bottom moves with the surface pressure,
+    """boundary (SPTE) = (dps/dt) E(p_bottom) / g (kg s-3): the Leibniz term
+    for a column whose bottom moves with the surface pressure,
 
         d/dt <E> = <dE/dt> + E(p_bottom) (dp_bottom/dt) / g.
 
@@ -165,49 +177,54 @@ def surface_pressure_term(dpsdt, e_bottom, g):
 # with div3(a v) = div(a u) + d(a omega)/dp. Its horizontal and vertical
 # parts, with a minus sign, are
 #
-#     HFOKE + HFOV + HFADT = -div(q K u)          (HFOV is HCV)
-#     VFOKE + VFOV + VFADT = -d(q K omega)/dp     (VFOV is VCV)
+#     fluxform_hflux_ke + fluxform_hflux_vapor + fluxform_hcross = -div(q K u)
+#     fluxform_vflux_ke + fluxform_vflux_vapor + fluxform_vcross = -d(q K omega)/dp
 #
-# and equal HAKE + HCV and VAKE + VCV analytically, but are differenced in a
-# different order. DIVV = div(u) + d(omega)/dp vanishes by continuity, so
-# every term proportional to it measures the discrete continuity error.
+# (HFOKE + HFOV + HFADT and VFOKE + VFOV + VFADT in the reference; HFOV is
+# HCV and VFOV is VCV). They equal the groups hflux and vflux analytically,
+# but are differenced in a different order. The 3D divergence DIVV =
+# div(u) + d(omega)/dp vanishes by continuity, so every term proportional
+# to it measures the discrete continuity error.
 
 def horizontal_flux_of_ke(q, k, u, v, geometry):
-    """HFOKE = -q div(K u)."""
+    """fluxform_hflux_ke (HFOKE) = -q div(K u)."""
     return -q * divergence(k * u, k * v, geometry)
 
 
 def vertical_flux_of_ke(q, d_k_omega_dp):
-    """VFOKE = -q d(K omega)/dp, the derivative taken on model levels."""
+    """fluxform_vflux_ke (VFOKE) = -q d(K omega)/dp, the derivative taken on
+    model levels."""
     return -q * d_k_omega_dp
 
 
 def horizontal_divergence_cross_term(q, k, u, v, geometry):
-    """HFADT = q K div(u)."""
+    """fluxform_hcross (HFADT) = q K div(u)."""
     return q * k * divergence(u, v, geometry)
 
 
 def vertical_divergence_cross_term(q, k, d_omega_dp):
-    """VFADT = q K d(omega)/dp."""
+    """fluxform_vcross (VFADT) = q K d(omega)/dp."""
     return q * k * d_omega_dp
 
 
 def three_d_divergence(u, v, d_omega_dp, geometry):
-    """DIVV = div(u) + d(omega)/dp (s-1), zero by continuity."""
+    """divergence_3d_error (DIVV) = div(u) + d(omega)/dp (s-1), zero by
+    continuity."""
     return divergence(u, v, geometry) + d_omega_dp
 
 
 def geopotential_flux_terms(q, phi, u, v, omega, d_phi_dp, d_omega_phi_dp, divv, geometry):
-    """The flux form of PEKE = -q u . grad(Phi). With the hydrostatic
-    specific volume alpha = -dPhi/dp,
+    """The flux form of pe_conversion = -q u . grad(Phi). With the
+    hydrostatic specific volume alpha = -dPhi/dp,
 
-        PEKE = FOGEOP + BARCC + QPHIDIVV,
-        HFOGEOP  = -q div(Phi u)
-        FOGEOP   = HFOGEOP - q d(omega Phi)/dp     flux of geopotential
-        BARCC    = -omega alpha q                   baroclinic conversion
-        QPHIDIVV =  q Phi DIVV                      continuity closure
+        pe_conversion = pe_flux_geopotential + pe_baroclinic + pe_continuity_error
+        pe_hflux_geopotential (HFOGEOP) = -q div(Phi u)
+        pe_flux_geopotential (FOGEOP)   = pe_hflux_geopotential - q d(omega Phi)/dp
+        pe_baroclinic (BARCC)           = -omega alpha q
+        pe_continuity_error (QPHIDIVV)  =  q Phi DIVV
 
-    Returns (ALPHA, BARCC, HFOGEOP, FOGEOP, QPHIDIVV)."""
+    Returns (alpha, pe_baroclinic, pe_hflux_geopotential,
+    pe_flux_geopotential, pe_continuity_error)."""
     alpha = -d_phi_dp
     hfogeop = -q * divergence(phi * u, phi * v, geometry)
     return (alpha, -omega * alpha * q, hfogeop, hfogeop - q * d_omega_phi_dp,
