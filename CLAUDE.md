@@ -159,14 +159,22 @@ offline dynamics.
   skipping layers with a missing end, NCL-style two-layer d/dp, linear
   interpolation in p with no extrapolation.
 
-## README
+## README and documentation
 
-- `README.md` is the user-facing guide (2026-10-19): the budget and its
-  groups, installation, input data, one day, options, long runs, AR
-  detection, composites, compatibility, tests. Equations in LaTeX math
-  (`$...$`, `$$...$$`), no Unicode math symbols (user's request); full
-  sentences, not terse. Every Python example in it was run on real data;
-  keep them runnable when the API changes.
+- `README.md` is minimal (user's decision, 2026-10-19): what the package
+  does, installation, MERRA-2 input, the budget of one day and of many days,
+  and AR detection with KEV/VTE. Keep it that way. It does not mention the
+  testing and reference-compatibility tools (`geometry.REFERENCE`,
+  `boundary_everywhere`, the test variables, `reference/`) or the diagnostic
+  options; they stay in the code.
+- Equations in LaTeX math (`$...$`, `$$...$$`), no Unicode math symbols;
+  full sentences, not terse (user's requests). Every Python example in it was
+  run on real data; keep them runnable when the API changes.
+- `drafts/README_full.md` (gitignored, not public) is the long version, with
+  the user's edits: the budget and its groups, options, long runs, detection,
+  composites and attribution with their equations, compatibility, tests. It
+  is the starting point for a documentation site, to be built and hosted
+  later.
 
 ## Notebooks
 
