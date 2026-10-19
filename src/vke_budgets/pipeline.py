@@ -1,17 +1,14 @@
 """
-Run the budgets over a range of days and write them to disk, resumably.
+Run the budgets over a range of days and write them to disk.
 
-One call (or one Slurm job) handles a contiguous range of days, normally a
-month or more; a climatology is a handful of such jobs, not one job per day.
-
-Clean layout: the output is one file per calendar month (or the part of
+The output is one file per calendar month (or the part of
 one that the range covers), named <prefix>_<first day>-<last day>.nc. Each
 finished day is first written to <out_dir>/parts/<day>.nc, so a job that is
 killed resumes at the day it was on. When a month is complete its parts are
 merged into the month file, rounded to `significant_bits` if given, and
 deleted. Months whose file exists are skipped.
 
-Legacy layout: the reference's two files per day; days whose files exist
+Legacy layout: save two files per day; days whose files exist
 are skipped.
 """
 import glob

@@ -1,8 +1,6 @@
 """
 Writing and reading budget outputs.
 
-Two layouts.
-
 Clean (the default): one netCDF file per period (normally a month), with
 the window terms on `time` and the instantaneous columns (ivt, kev, vte)
 on `time_inst`, under the package's names (names.py). A period file holds the instantaneous steps that fall
