@@ -28,6 +28,8 @@ def main(argv=None):
     run.add_argument("--keep-3d", action="store_true", help="also write the terms on levels")
     run.add_argument("--dyn-crosscheck", action="store_true", help="also IDOKE and IDOV")
     run.add_argument("--ncl-vte-form", action="store_true", help="also IHCV_vO and IVCV_vO")
+    run.add_argument("--boundary-everywhere", action="store_true",
+                     help="apply the boundary term (SPTE) at every point, as the reference")
     run.add_argument("--flux-form", action="store_true",
                      help="also the flux-form decomposition (IHFOKE ... IQPHIDIVV)")
     args = ap.parse_args(argv)
@@ -35,7 +37,7 @@ def main(argv=None):
     options = replace(BudgetOptions(), geometry=GEOMETRIES[args.geometry],
                       quantities=tuple(args.quantities.split(",")), keep_3d=args.keep_3d,
                       dyn_crosscheck=args.dyn_crosscheck, ncl_vte_form=args.ncl_vte_form,
-                      flux_form=args.flux_form)
+                      flux_form=args.flux_form, boundary_everywhere=args.boundary_everywhere)
     pipeline.run(args.start, args.end, args.root, args.out, options, layout=args.layout,
                  significant_bits=args.bits, n_workers=args.workers)
 

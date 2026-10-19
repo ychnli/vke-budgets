@@ -157,15 +157,22 @@ def local_tendency(w_m, w_v, u, v, dqdt, dudt, dvdt):
     return w_m * (u * dudt + v * dvdt) + w_v * dqdt
 
 
-def surface_pressure_term(dpsdt, e_bottom, g):
+def surface_pressure_term(dpsdt, e_bottom, g, bottom_moves=True):
     """boundary (SPTE) = (dps/dt) E(p_bottom) / g (kg s-3): the Leibniz term
     for a column whose bottom moves with the surface pressure,
 
         d/dt <E> = <dE/dt> + E(p_bottom) (dp_bottom/dt) / g.
 
-    As in the reference, E(p_bottom) is E at the lowest level above ground
-    and the term is applied everywhere."""
-    return dpsdt * e_bottom / g
+    The second term is the change of the column total because its lower
+    edge moves, not because E changes inside it. E(p_bottom) is E at the
+    lowest level above ground.
+
+    The integrated column runs from min(p_s, p_bottom) upward, so where the
+    surface pressure stays above p_bottom (1000 hPa; most of the ocean) its
+    bottom is fixed at p_bottom and the term is zero. bottom_moves is False
+    there. The reference applies the term everywhere (bottom_moves=True).
+    """
+    return (dpsdt * e_bottom / g).where(bottom_moves, 0.0)
 
 
 # --- Flux-form decomposition (KEV only; diagnostics) -----------------------

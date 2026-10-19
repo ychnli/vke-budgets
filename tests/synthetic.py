@@ -14,7 +14,8 @@ U0, Q0, DT = 20.0, 0.01, 10800.0
 COLUMN_MASS = 800e2 / GRAVITY                 # 1000-200 hPa, kg m-2
 
 
-def solid_body(n_time=2, drag=None, drying=None, moistening_inst=1.0, start="2023-01-04"):
+def solid_body(n_time=2, drag=None, drying=None, moistening_inst=1.0, start="2023-01-04",
+               ps=(1013e2, 0.0)):
     """u = U0 cos(lat), v = omega = 0, q = Q0, phi depending on p only.
 
     drag: rate r (s-1) of a turbulent drag du/dt = -r u, dv/dt = -r v.
@@ -22,6 +23,7 @@ def solid_body(n_time=2, drag=None, drying=None, moistening_inst=1.0, start="202
     moistening_inst: q_inst at the end of each window is this factor times
         q_inst at its start (the first step is Q0).
     start: time of the first instantaneous step.
+    ps: (first value in Pa, change per window in Pa) of the surface pressure.
     """
     t_inst = pd.date_range(start, periods=n_time + 1, freq="3h").values
     coslat = np.cos(np.deg2rad(LAT))[:, None]
@@ -38,6 +40,7 @@ def solid_body(n_time=2, drag=None, drying=None, moistening_inst=1.0, start="202
                  "phi": 9.81 * 7000.0 * np.log(1000e2 / PML)[:, None, None],
                  "omega": 0.0}[name]
         data[name] = (dims, field(dims, value), {"units": units})
+    data["ps_inst"][1][...] = (ps[0] + ps[1] * np.arange(n_time + 1))[:, None, None]
     growth = moistening_inst ** np.arange(n_time + 1)
     data["q_inst"][1][...] *= growth[:, None, None, None]
     if drag is not None:

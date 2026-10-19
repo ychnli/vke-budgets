@@ -74,7 +74,8 @@ TERMS = {
     "analysis": Term("analysis increments of wind and vapor", "AOKEV", "analysis"),
     
     # boundary term
-    "boundary": Term("moving lower boundary, (dps/dt) E(p_bottom)/g", "SPTE", "boundary"),
+    "boundary": Term("moving lower boundary, (dps/dt) E(p_bottom)/g where the column bottom moves "
+                     "(zero where p_s stays above p_bottom)", "SPTE", "boundary"),
 
     # --- Diagnostics ------------------------------------------------------
     "tend_local": Term("integral of the local tendency, q^n u.du/dt + n q^(n-1) K dq/dt",
@@ -116,7 +117,7 @@ TERMS = {
 }
 
 # Variables that belong to no single budget: new name -> (legacy name,
-# long name, units). The *_3d entries exist only with keep_3d.
+# long name, units). The *_3d entries exist only with keep_3d
 SHARED = {
     "ivt": ("IVT", "integrated vapor transport, the magnitude of <q u>", "kg m-1 s-1"),
     "kev": ("IKEV", "column KEV <q K>, instantaneous", "kg s-2"),

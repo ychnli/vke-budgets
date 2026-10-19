@@ -7,6 +7,7 @@ import numpy as np
 import xarray as xr
 
 from synthetic import COLUMN_MASS, DT, LAT, Q0, U0, kinetic_energy, solid_body
+from vke_budgets.vertical import GRAVITY
 from vke_budgets import budget
 
 INNER = np.abs(LAT) < 87
@@ -123,3 +124,22 @@ def test_flux_form_matches_advective_form_for_solid_body_rotation():
         np.testing.assert_allclose(out[name].values[:, INNER], 0.0, atol=1e-12, err_msg=name)
     # No vertical motion: the 3D flux of geopotential is the horizontal one.
     xr.testing.assert_allclose(out["kev_pe_flux_geopotential"], out["kev_pe_hflux_geopotential"])
+
+
+def test_boundary_term_only_where_the_column_bottom_moves():
+    """kev_boundary = (dps/dt) E(bottom)/g where p_s is below 1000 hPa at an
+    end of the window, and 0 where it stays above (the bottom is fixed at
+    1000 hPa); boundary_everywhere applies it everywhere, as the reference."""
+    rate = 100.0                                   # Pa per window
+    e_bottom = Q0 * kinetic_energy()[INNER]        # E at 1000 hPa, uniform in height
+    expected = rate / DT * e_bottom / GRAVITY
+    # p_s over the two windows: above 1000 hPa throughout; below throughout;
+    # crossing 1000 hPa in the first window (999.5 -> 1000.5 hPa), then above.
+    for ps0, moves in ((1013e2, (False, False)), (985e2, (True, True)),
+                       (999.5e2, (True, False))):
+        ds = solid_body(ps=(ps0, rate))
+        out = budget.compute(ds)["kev_boundary"].values[:, INNER]
+        ref = budget.compute(ds, budget.BudgetOptions(boundary_everywhere=True))
+        assert_close(ref["kev_boundary"].values[:, INNER], expected, rtol=1e-6)
+        for window, window_moves in enumerate(moves):
+            assert_close(out[window], expected if window_moves else 0.0, rtol=1e-6, atol=0)

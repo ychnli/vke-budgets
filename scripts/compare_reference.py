@@ -11,12 +11,13 @@ Statistics are over |lat| < 87 and all time steps: relative RMS
 RMS(ours - ref) / RMS(ref), max |ours - ref|, and the number of points that
 are missing in one and not the other.
 
-Configurations (--config, repeatable): `reference` (geometry.REFERENCE,
-which should match to float32 rounding), `default` (the package defaults),
-and one fix at a time on top of REFERENCE, to size each deliberate change:
-`fix-dy` (no extra a/M), `fix-metric` (metric term with N), `fix-seam`
-(periodic longitude), `fix-all` (all three, still WGS84), and `sphere`
-(= default).
+Configurations (--config, repeatable): `reference` (geometry.REFERENCE and
+the boundary term everywhere, which should match to float32 rounding),
+`default` (the package defaults), and one fix at a time on top of the
+reference, to size each deliberate change: `fix-dy` (no extra a/M),
+`fix-metric` (metric term with N), `fix-seam` (periodic longitude),
+`fix-all` (all three, still WGS84), `sphere` (all three on the sphere) and
+`fix-boundary` (no boundary term where the column bottom is fixed).
 """
 import argparse
 import os
@@ -31,14 +32,17 @@ from vke_budgets import budget, names
 from vke_budgets.geometry import DEFAULT, REFERENCE
 from vke_budgets.sources import merra2
 
+# name -> (geometry, boundary term everywhere as in the reference)
 CONFIGS = {
-    "reference": REFERENCE,
-    "fix-dy": replace(REFERENCE, metpy_dy_factor=False),
-    "fix-metric": replace(REFERENCE, metric_radius=None),
-    "fix-seam": replace(REFERENCE, periodic_lon=None),
-    "fix-all": replace(REFERENCE, metpy_dy_factor=False, metric_radius=None, periodic_lon=None),
-    "sphere": DEFAULT,
-    "default": DEFAULT,
+    "reference": (REFERENCE, True),
+    "fix-dy": (replace(REFERENCE, metpy_dy_factor=False), True),
+    "fix-metric": (replace(REFERENCE, metric_radius=None), True),
+    "fix-seam": (replace(REFERENCE, periodic_lon=None), True),
+    "fix-all": (replace(REFERENCE, metpy_dy_factor=False, metric_radius=None, periodic_lon=None),
+                True),
+    "sphere": (DEFAULT, True),
+    "fix-boundary": (REFERENCE, False),
+    "default": (DEFAULT, False),
 }
 
 
@@ -68,8 +72,10 @@ def main():
     ds = merra2.open_day(args.date, args.root)
 
     for config in args.config or ["reference"]:
-        options = budget.BudgetOptions(geometry=CONFIGS[config], dyn_crosscheck=True,
-                                       ncl_vte_form=True, flux_form=True)
+        geometry, boundary_everywhere = CONFIGS[config]
+        options = budget.BudgetOptions(geometry=geometry, dyn_crosscheck=True,
+                                       ncl_vte_form=True, flux_form=True,
+                                       boundary_everywhere=boundary_everywhere)
         t0 = time.time()
         out = budget.compute(ds, options, n_workers=args.workers)
         elapsed = time.time() - t0

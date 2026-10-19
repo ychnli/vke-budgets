@@ -67,6 +67,11 @@ class BudgetOptions:
         flux_form: also compute the flux-form decomposition of the KEV
             budget (kev_fluxform_* and the continuity diagnostics, see
             terms.py).
+        boundary_everywhere: apply the boundary term (SPTE) at every point,
+            as the reference does. By default it is zero where the surface
+            pressure stays above p_bottom over the window, because there the
+            bottom of the integrated column is fixed at p_bottom and does
+            not move (see terms.surface_pressure_term).
     """
     geometry: HorizontalGeometry = DEFAULT
     quantities: tuple = ("KEV", "VTE")
@@ -78,6 +83,7 @@ class BudgetOptions:
     dyn_crosscheck: bool = False
     ncl_vte_form: bool = False
     flux_form: bool = False
+    boundary_everywhere: bool = False
 
 
 def instantaneous_columns(inst, options=BudgetOptions()):
@@ -157,6 +163,10 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
     dudt = (inst_end["u_inst"] - inst_start["u_inst"]) / dt
     dvdt = (inst_end["v_inst"] - inst_start["v_inst"]) / dt
     dpsdt = (inst_end["ps_inst"] - inst_start["ps_inst"]) / dt
+    # The integrated column starts at min(p_s, p_bottom): its bottom can only
+    # move where p_s is below p_bottom at either end of the window.
+    bottom_moves = ((inst_start["ps_inst"] < options.p_bottom)
+                    | (inst_end["ps_inst"] < options.p_bottom) | options.boundary_everywhere)
 
     momentum, moisture = physics_processes(window)
     out = {}
@@ -213,7 +223,7 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
             (inst_end[column] - inst_start[column]) / dt).assign_attrs(
             names.attrs("tend", quantity))
         out[names.name("boundary", quantity)] = terms.surface_pressure_term(
-            dpsdt, bottom_value(e, dim="lev"), options.g).assign_attrs(
+            dpsdt, bottom_value(e, dim="lev"), options.g, bottom_moves).assign_attrs(
             names.attrs("boundary", quantity))
 
     if options.flux_form:

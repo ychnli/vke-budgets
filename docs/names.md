@@ -19,7 +19,7 @@ pressure levels (`keep_3d`) adds `_3d`, and its reference name drops the `I`.
 | `kev_net_vapor_source_turb` | `vte_net_vapor_source_turb` | net_vapor_source | ITOV | ITOV_v | net vapor source from turbulence (surface evaporation, mixing) |
 | `kev_net_vapor_source_chem` | `vte_net_vapor_source_chem` | net_vapor_source | ICOV | ICOV_v | net vapor source from chemistry |
 | `kev_analysis` | `vte_analysis` | analysis | IAOKEV | IAOKEV_v | analysis increments of wind and vapor |
-| `kev_boundary` | `vte_boundary` | boundary | SPTE | SPTE_v | moving lower boundary, (dps/dt) E(p_bottom)/g |
+| `kev_boundary` | `vte_boundary` | boundary | SPTE | SPTE_v | moving lower boundary, (dps/dt) E(p_bottom)/g where the column bottom moves (zero where p_s stays above p_bottom) |
 | `kev_tend_local` | `vte_tend_local` | diagnostic | I_KEVTEND | I_VTETEND | integral of the local tendency, q^n u.du/dt + n q^(n-1) K dq/dt |
 | `kev_mean` | `vte_mean` | diagnostic | IKEVAVG | IVTEAVG | column E of the window-mean state |
 | `kev_hadv_vapor` | `vte_hadv_vapor` | diagnostic | IHAV | IHAV_v | horizontal advection of q, -n q^(n-1) K u.grad(q) (advective form of hflux_vapor) |
