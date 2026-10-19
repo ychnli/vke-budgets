@@ -349,8 +349,14 @@ offline dynamics.
 
 - Budget closure. The KEV residual is about 30% of the tendency with the
   offline dynamics and about 3% with MERRA-2's DYN tendencies
-  (`VERIFICATION_MERRA2.md` §6). Once the port is done, use the clearer code to
-  find out where it comes from. The user will give more context then.
+  (`VERIFICATION_MERRA2.md` §6). **Accepted (user and Aidi, 2026-10-18):** a
+  larger residual from offline dynamics computed from 3-hourly output is
+  largely unavoidable if the budget is to be resolved term by term; it is not
+  treated as a bug. Report it with a fair normalization (L1/L1 or RMS
+  pointwise; box residual against the size of the box budget), not against
+  the signed, near-cancelling tendency. Parts that are not a sampling limit
+  may still be worth fixing if the user asks: the terrain hot spots
+  (isobaric derivatives next to the ground) and SPTE over the ocean.
 - Measure each operator fix on real data (relative RMS per term).
 - Issues found while reading the reference, not yet acted on (raise them with
   the user when porting the code they affect):
