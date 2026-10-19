@@ -18,5 +18,8 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 #                         2023-01-04 and 2023-01-05
 #   VKE_TEST_REFERENCE    directory of the reference outputs for 2017-07-12
 #                         (analysis_AR_IVKE1_{inst,tavg}20170712.nc)
+#   VKE_TEST_AR_MASKS     directory of the reference AR masks for 2023-01-04
+#                         (detect_AR_{IVT,IKEV,IVTE}_Lap_v2_20230104.nc)
 # export VKE_TEST_MERRA2_ROOT=/path/to/merra2
 # export VKE_TEST_REFERENCE=/path/to/reference/outputs
+# export VKE_TEST_AR_MASKS=/path/to/reference/masks

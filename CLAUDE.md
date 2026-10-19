@@ -210,11 +210,32 @@ offline dynamics.
   MERRA-2's DYN tendencies). So the operator flaws are not the residual.
 - Performance on 4 CPUs: 93 s per day with `n_workers=3`, 9.9 GB peak.
 - `scripts/compare_reference.py` compares a day with the reference outputs,
-  for `reference` and for one geometry fix at a time.
+  for `reference` and for one fix at a time.
+- **Boundary term (option A, user's decision 2026-10-19).** `kev_boundary`
+  (SPTE) is zero where p_s stays above p_bottom (1000 hPa) at both ends of the
+  window: there the integrated column's bottom is fixed, so the Leibniz term
+  is zero. `boundary_everywhere=True` (CLI `--boundary-everywhere`) restores
+  the reference. Size: the term changes by 62–70% relative RMS (56% of the
+  points set to zero); nothing else changes; closure is unchanged (KEV AR
+  mask 0.2811 → 0.2815, Aidi's box L1/L1 0.3445 → 0.3440).
 - `flux_form=True` adds the flux-form decomposition (`HFOKE`…`QPHIDIVV`,
   KEV only). Not yet ported: the `_eta` ordering.
 - `budget.iter_windows` yields one window at a time (for streaming
   reductions); `compute` and `combine` build on it.
+
+## AR detection and composites (`detection.py`, `composite.py`)
+
+- `detection.detect(columns)`: wraps TempestExtremes DetectBlobs exactly as
+  the reference (Laplacian{9,7.0} < threshold, ≥ 50 points, |lat| ≥ 20°;
+  `REFERENCE_THRESHOLDS` from threshold_v2.txt). Masks match the reference's
+  point for point (2023-01-03…05, all three fields). `window_mask`: an AR at
+  either end of a window (the reference's mean ≥ 0.5).
+- `composite.py`: `region`, `area_integral` (cos-lat), `ar_index` (1° box
+  mean), `composite` (regression on the index times one standard deviation,
+  with `lag` and `when`, as Ong & Yang 2024 and Zhang et al. 2026), and
+  `contributions` (Zhang et al. Eqs. 8–10: growth and movement per term).
+  Significance tests (t-test with lag autocorrelation) are not implemented.
+  The paper's Text S2 (supplement) is not in `papers/`.
 
 ## Output and long runs (`io.py`, `pipeline.py`, `cli.py`)
 
@@ -281,7 +302,7 @@ offline dynamics.
 
 ## Numerical consistency (required)
 
-- With `geometry.REFERENCE` (and any other compatibility switches), the
+- With `geometry.REFERENCE` and `boundary_everywhere=True`, the
   package must reproduce the reference outputs to float32 rounding. The
   defaults differ deliberately. Report every deliberate change to the user
   with its size (relative RMS per term, one change at a time).
@@ -338,7 +359,9 @@ offline dynamics.
   pointwise; box residual against the size of the box budget), not against
   the signed, near-cancelling tendency. Parts that are not a sampling limit
   may still be worth fixing if the user asks: the terrain hot spots
-  (isobaric derivatives next to the ground) and SPTE over the ocean.
+  (isobaric derivatives next to the ground). The user prefers to take
+  horizontal derivatives as the NCL did (2026-10-19); to be settled: the
+  model-level ordering (`_eta`, portable) and/or spherical harmonics.
   Numbers so far (default geometry):
   - 2023-01-03…05, inside the IKEV AR mask: RMS(residual)/RMS(tend) 0.287;
     split exactly into tendency mismatch (tend − tend_local − boundary) 0.146,
@@ -355,8 +378,6 @@ offline dynamics.
 - Measure each operator fix on real data (relative RMS per term).
 - Issues found while reading the reference, not yet acted on (raise them with
   the user when porting the code they affect):
-  - `SPTE` is added everywhere, but where p_s > 1000 hPa the column bottom is
-    fixed at 1000 hPa, so the Leibniz boundary term there should be zero.
   - Near steep terrain, horizontal derivatives on pressure levels are missing
     next to below-ground points, so the integral of those terms starts higher
     than the integral of the tendency. A possible source of residual.
