@@ -161,29 +161,11 @@ offline dynamics.
 
 ## Notebooks
 
-- `notebooks/00_quickstart.ipynb`: plumbing for the user's own residual
-  investigation (load, one live window, the case from files, group maps,
-  RMS, the exact three-way residual split, dynamics profiles). Keep it
-  plumbing; the user drives the investigation. Commit notebooks without
-  outputs.
-- `notebooks/01_residual_normalization.ipynb`: reproduces Aidi's comment on
-  normalizing the residual (2017-07-12, his box 170–120°W, 25–55°N), box and
-  map resolved, and saves the figures as PNG in `$VKE_JULY_OUT/figures`.
-  Findings: his "Residual of IKEV budget" (budget_box_IVKE1.py) uses MERRA-2's
-  DYN tendencies and no SPTE; 19.3% of the signed box tendency (his 20%) and
-  0.9% of the L1 tendency (his 1%), reproduced exactly. But the signed
-  tendency cancels 95% in the box and the signed residual 76% (offline 91%),
-  so both signed ratios mislead. Treated alike: his residual 3.9% (L1/L1),
-  4.4% (RMS); offline 34%, 42%. Box residual / sum of |box groups|: 1.5%,
-  4.9%. The offline residual is largest over steep terrain (Alaska,
-  Kamchatka, the Coast Mountains, Hawaii).
-- Kernel `vke-budgets` (`~/.local/share/jupyter/kernels/vke`) sets
-  `VKE_MERRA2_ROOT`, `VKE_CASE_OUT`, `VKE_AR_MASKS`, `VKE_MERRA2_ROOT_2017`,
-  `VKE_JULY_OUT`, `VKE_AIDI_OUTPUT` and one thread per library; notebooks
-  read paths only from those.
-- First numbers (2023-01-03…05, inside the IKEV AR mask, default
-  geometry): RMS(resid)/RMS(tend) 0.287; parts: tendency mismatch 0.146,
-  MERRA-2 closure 0.026, offline dynamics 0.281.
+- The user keeps their own notebooks in `notebooks/` (commit them without
+  outputs). The kernel `vke-budgets` (`~/.local/share/jupyter/kernels/vke`)
+  sets `VKE_MERRA2_ROOT`, `VKE_CASE_OUT`, `VKE_AR_MASKS`,
+  `VKE_MERRA2_ROOT_2017`, `VKE_JULY_OUT`, `VKE_AIDI_OUTPUT` and one thread per
+  library; notebooks read paths only from those.
 
 ## Standard input and adapters
 
@@ -357,6 +339,19 @@ offline dynamics.
   the signed, near-cancelling tendency. Parts that are not a sampling limit
   may still be worth fixing if the user asks: the terrain hot spots
   (isobaric derivatives next to the ground) and SPTE over the ocean.
+  Numbers so far (default geometry):
+  - 2023-01-03…05, inside the IKEV AR mask: RMS(residual)/RMS(tend) 0.287;
+    split exactly into tendency mismatch (tend − tend_local − boundary) 0.146,
+    MERRA-2 closure 0.026, offline dynamics 0.281.
+  - 2017-07-12, Aidi's box (170–120°W, 25–55°N): his "Residual of IKEV
+    budget" (budget_box_IVKE1.py: MERRA-2 DYN, no SPTE) is 19.3% of the
+    signed box tendency and 0.9% of its L1 norm (his 20% and 1%). Both
+    signed ratios mislead: the box integral cancels 95% of the tendency and
+    76% of his residual (91% of the offline one). Treated alike, his residual
+    is 3.9% (L1/L1) and 4.4% (RMS); the offline one 34% and 42%. The box
+    residual against the sum of |box groups|: 1.5% and 4.9%. The offline
+    residual is largest over steep terrain (Alaska, Kamchatka, the Coast
+    Mountains, Hawaii).
 - Measure each operator fix on real data (relative RMS per term).
 - Issues found while reading the reference, not yet acted on (raise them with
   the user when porting the code they affect):
