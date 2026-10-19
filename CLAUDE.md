@@ -159,6 +159,15 @@ offline dynamics.
   skipping layers with a missing end, NCL-style two-layer d/dp, linear
   interpolation in p with no extrapolation.
 
+## README
+
+- `README.md` is the user-facing guide (2026-10-19): the budget and its
+  groups, installation, input data, one day, options, long runs, AR
+  detection, composites, compatibility, tests. Equations in LaTeX math
+  (`$...$`, `$$...$$`), no Unicode math symbols (user's request); full
+  sentences, not terse. Every Python example in it was run on real data;
+  keep them runnable when the API changes.
+
 ## Notebooks
 
 - The user keeps their own notebooks in `notebooks/` (commit them without
@@ -359,9 +368,10 @@ offline dynamics.
   pointwise; box residual against the size of the box budget), not against
   the signed, near-cancelling tendency. Parts that are not a sampling limit
   may still be worth fixing if the user asks: the terrain hot spots
-  (isobaric derivatives next to the ground). The user prefers to take
-  horizontal derivatives as the NCL did (2026-10-19); to be settled: the
-  model-level ordering (`_eta`, portable) and/or spherical harmonics.
+  (isobaric derivatives next to the ground). **Horizontal derivatives stay
+  as in the translated Python script (user's decision, 2026-10-19):** finite
+  differences on isobaric surfaces, with the package's geometry fixes. No
+  spherical harmonics.
   Numbers so far (default geometry):
   - 2023-01-03…05, inside the IKEV AR mask: RMS(residual)/RMS(tend) 0.287;
     split exactly into tendency mismatch (tend − tend_local − boundary) 0.146,
