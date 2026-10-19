@@ -175,6 +175,14 @@ offline dynamics.
   composites and attribution with their equations, compatibility, tests. It
   is the starting point for a documentation site, to be built and hosted
   later.
+- `drafts/website/` (gitignored): material for the website on the VKE
+  framework. `snippet.py` (open a MERRA-2 day, `budget.compute`,
+  `budget.groups`, a northeast Pacific `.sel`, 2023-01-04) and the xarray HTML
+  representation of its result, `kev_budget_repr.html` (a fragment to embed;
+  HTML and CSS only, no JavaScript) and `kev_budget_preview.html` (a
+  standalone page). Regenerate them by running the snippet when the output
+  changes. The northeast Pacific selection keeps the value previews off the
+  blanked polar rows (all NaN).
 
 ## Notebooks
 

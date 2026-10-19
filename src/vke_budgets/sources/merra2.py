@@ -129,8 +129,14 @@ def open_day(date=None, root=None, paths=None, p_bottom=1000e2, p_top=150e2, g=G
         ds[f"dqdt_{proc}"] = pressure_levels(raw["qdt"][f"DQVDT{code}"]) \
             .assign_attrs(_attrs("kg kg-1 s-1", f"specific humidity tendency, {proc}"))
 
-    ds = ds.assign_coords(lev=ds["lev"].assign_attrs(_attrs("Pa", "pressure")),
-                          mlev=ds["mlev"].assign_attrs(_attrs("1", "MERRA-2 model layer, 1 = top")))
+    # Plain coordinate attributes (the files also carry vmax, vmin and
+    # valid_range, which say nothing here).
+    ds = ds.assign_coords(
+        lev=ds["lev"].assign_attrs(_attrs("Pa", "pressure")),
+        mlev=ds["mlev"].assign_attrs(_attrs("1", "MERRA-2 model layer, 1 = top")),
+        lat=ds["lat"].copy().assign_attrs(_attrs("degrees_north", "latitude")),
+        lon=ds["lon"].copy().assign_attrs(_attrs("degrees_east", "longitude")),
+    )
     ds.attrs = {"source": "MERRA-2",
                 **{f"file_{key}": os.path.basename(path) for key, path in paths.items()}}
 

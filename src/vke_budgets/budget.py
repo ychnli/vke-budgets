@@ -338,9 +338,12 @@ def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=Fal
     """
     parts = list(iter_windows(ds, options, windows, n_workers, progress))
     out = combine(parts)
+    out["time"].attrs = {"long_name": "centre of the averaging window"}
+    out["time_inst"].attrs = {"long_name": "instantaneous time (the ends of the windows)"}
     out.attrs = {"source": ds.attrs.get("source", ""),
                  "options": repr(options)}
     return out
+
 
 def groups(result, quantity="KEV"):
     """The budget of `quantity` in groups (kg s-3), in budget order:
@@ -371,4 +374,12 @@ def groups(result, quantity="KEV"):
     for group, da in ds.data_vars.items():
         da.attrs = {"units": "kg s-3", "long_name": f"{quantity} budget: "
                     f"{names.GROUP_LONG_NAMES[group]}"}
+    n = QUANTITIES[quantity]
+    ds.attrs = {
+        "title": f"Column {quantity} budget by group",
+        "quantity": f"{quantity} = q^{n} K" if n > 1 else f"{quantity} = q K",
+        "budget": "tend = " + " + ".join(g for g in names.GROUPS if g != "tend") + " + residual",
+        "column": "mass-weighted integral from 1000 to 200 hPa",
+        "source": result.attrs.get("source", ""),
+    }
     return ds
