@@ -114,7 +114,7 @@ The masks are on the instantaneous times. To select the 3-hour windows of the
 budget terms that have an AR at either end, use
 `detection.window_mask(masks["mask_kev"], ds["time"].values)`.
 
-## AR frequency
+<!-- ## AR frequency
 
 The `vke-budgets climatology` command computes IVT and the column KEV and
 VTE at every 3-hourly instant, detects ARs in each field, and writes one file
@@ -131,7 +131,7 @@ vke-budgets climatology --start 2010-01 --end 2019-12 \
 The AR frequency over many months is the sum of `ar_count_<field>` over the
 month files divided by the sum of `n_steps`. Multiplied by 365.25, it is in
 days per year. A month takes about 8 minutes on 2 CPUs. For array jobs,
-`--task` and `--months-per-task` select one group of months.
+`--task` and `--months-per-task` select one group of months. -->
 
 ## References
 
