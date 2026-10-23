@@ -26,16 +26,18 @@ import tempfile
 
 import numpy as np
 import xarray as xr
+from numpy.typing import ArrayLike
 
-# Laplacian thresholds of the reference (threshold_v2.txt), in the field's
-# units per rad^2.
+# Laplacian thresholds in the field's units per rad^2.
+# from Zhang et al 2026
 REFERENCE_THRESHOLDS = {"ivt": -41023.514894, "kev": -478203.362115, "vte": -2105.315636}
 MIN_POINTS = 50          # smallest blob, in grid points
 MIN_ABS_LAT = 20.0       # degrees
 
 
-def detect(columns, thresholds=REFERENCE_THRESHOLDS, min_points=MIN_POINTS,
-           min_abs_lat=MIN_ABS_LAT, executable="DetectBlobs"):
+def detect(columns: xr.Dataset, thresholds: dict[str, float] = REFERENCE_THRESHOLDS,
+           min_points: int = MIN_POINTS, min_abs_lat: float = MIN_ABS_LAT,
+           executable: str = "DetectBlobs") -> xr.Dataset:
     """AR masks from instantaneous column fields.
 
     Args:
@@ -80,7 +82,7 @@ def detect(columns, thresholds=REFERENCE_THRESHOLDS, min_points=MIN_POINTS,
     return xr.Dataset(masks)
 
 
-def window_mask(mask, times):
+def window_mask(mask: xr.DataArray, times: ArrayLike) -> xr.DataArray:
     """An instantaneous mask on the averaging windows centred at `times`: the
     mean of the masks at the two ends of each window, >= 0.5, i.e. an AR at
     either end. This is the reference's convention (make_website_budget.py).

@@ -24,6 +24,7 @@ documented and measured in tests/test_reference_operator_flaws.py.
 from dataclasses import dataclass
 
 import numpy as np
+from numpy.typing import ArrayLike
 
 
 @dataclass(frozen=True)
@@ -38,21 +39,21 @@ class Earth:
     flattening: float = 0.0
 
     @property
-    def e2(self):
+    def e2(self) -> float:
         """Eccentricity squared."""
         return self.flattening * (2.0 - self.flattening)
 
-    def meridional_radius(self, lat_deg):
+    def meridional_radius(self, lat_deg: ArrayLike) -> np.ndarray:
         """M(phi) (m): northward distance per radian of latitude."""
         s2 = np.sin(np.deg2rad(lat_deg)) ** 2
         return self.a * (1.0 - self.e2) / (1.0 - self.e2 * s2) ** 1.5
 
-    def prime_vertical_radius(self, lat_deg):
+    def prime_vertical_radius(self, lat_deg: ArrayLike) -> np.ndarray:
         """N(phi) (m): N cos(phi) is the radius of the latitude circle."""
         s2 = np.sin(np.deg2rad(lat_deg)) ** 2
         return self.a / np.sqrt(1.0 - self.e2 * s2)
 
-    def meridian_distance(self, lat_deg):
+    def meridian_distance(self, lat_deg: ArrayLike) -> np.ndarray:
         """S(phi) (m), the distance north of the equator along a meridian,
         the integral of M dphi. Helmert's series in the third flattening
         n = f / (2 - f), accurate to well under a millimetre; on a sphere it

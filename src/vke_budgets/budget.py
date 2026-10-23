@@ -1,18 +1,17 @@
 """
-Assemble the KEV and VTE budgets from a standard input Dataset
-(standard.py) one averaging window at a time.
+Assemble the KEV and VTE budgets from a standard input Dataset (standard.py) 
+one averaging window at a time.
 
 For each window:
 
-1. On model levels, form the vertical-derivative pieces omega du/dp,
-   omega dv/dp, omega dq/dp and d(q^n omega)/dp. Model levels never go below
-   the ground, and their spacing is finest near the surface.
-2. Interpolate the window-mean state and those pieces to pressure levels.
+1. On model levels, compute the vertical derivative pieces omega du/dp,
+   omega dv/dp, omega dq/dp and d(q^n omega)/dp
+2. Interpolate the window-mean state and derivatives to pressure levels
 3. On pressure levels, form every term of terms.py, taking horizontal
-   derivatives along pressure surfaces.
-4. Integrate each term over the column, p_bottom to p_top (1000-200 hPa).
+   derivatives along pressure surfaces
+4. Integrate each term over the column, p_bottom to p_top (1000-200 hPa)
 5. Add the tendencies from the instantaneous fields at the two ends of the
-   window: tend = (<E>(end) - <E>(start)) / dt, and the boundary term.
+   window: tend = (<E>(end) - <E>(start)) / dt, and the boundary term
 
 The budget closes as (see groups and names.py)
 
@@ -22,6 +21,7 @@ The budget closes as (see groups and names.py)
 Variables are named <quantity>_<term> (kev_hflux_ke, vte_hflux_ke, ...);
 names.py has every name, its group, and the reference's name for it.
 """
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
@@ -74,7 +74,7 @@ class BudgetOptions:
             not move (see terms.surface_pressure_term).
     """
     geometry: HorizontalGeometry = DEFAULT
-    quantities: tuple = ("KEV", "VTE")
+    quantities: tuple[str, ...] = ("KEV", "VTE")
     g: float = GRAVITY
     p_bottom: float = 1000e2
     p_top: float = 200e2
@@ -86,9 +86,10 @@ class BudgetOptions:
     boundary_everywhere: bool = False
 
 
-def instantaneous_columns(inst, options=BudgetOptions()):
-    """Column integrals of the instantaneous state (dims time_inst, lat, lon):
-    ivt = |<q u>| (kg m-1 s-1), and kev = <q K>, vte = <q^2 K> (kg s-2)."""
+def instantaneous_columns(inst: xr.Dataset,
+                          options: BudgetOptions = BudgetOptions()) -> xr.Dataset:
+    """Column integrals of IVT, KEV, VTE for instantaneous state.
+    Output dimension (time_inst, lat, lon)"""
     integ = _integrator(options)
     q, u, v = inst["q_inst"], inst["u_inst"], inst["v_inst"]
     k = terms.kinetic_energy(u, v)
@@ -99,19 +100,20 @@ def instantaneous_columns(inst, options=BudgetOptions()):
     return xr.Dataset(out)
 
 
-def _shared_attrs(new):
+def _shared_attrs(new: str) -> dict[str, str]:
     legacy, long_name, units = names.SHARED[new]
     return {"units": units, "long_name": long_name, "legacy_name": legacy}
 
 
-def _integrator(options):
-    def integ(f):
+def _integrator(options: BudgetOptions) -> Callable[[xr.DataArray], xr.DataArray]:
+    def integ(f: xr.DataArray) -> xr.DataArray:
         return integrate_column(f, dim="lev", g=options.g,
                                 p_bottom=options.p_bottom, p_top=options.p_top)
     return integ
 
 
-def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
+def window_budget(window: xr.Dataset, inst_start: xr.Dataset, inst_end: xr.Dataset, dt: float,
+                  options: BudgetOptions = BudgetOptions()) -> xr.Dataset:
     """Every budget term for one averaging window.
 
     Args:
@@ -169,9 +171,12 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
                     | (inst_end["ps_inst"] < options.p_bottom) | options.boundary_everywhere)
 
     momentum, moisture = physics_processes(window)
+    if options.dyn_crosscheck and not ("dyn" in momentum and "dyn" in moisture):
+        raise ValueError("dyn_crosscheck needs the model's dynamics tendencies "
+                         "dudt_dyn, dvdt_dyn and dqdt_dyn in the input")
     out = {}
 
-    def add(term, quantity, field):
+    def add(term: str, quantity: str, field: xr.DataArray) -> None:
         """The column integral of a term, and the term itself with keep_3d."""
         out[names.name(term, quantity)] = integ(field).assign_attrs(names.attrs(term, quantity))
         if options.keep_3d:
@@ -245,7 +250,9 @@ def window_budget(window, inst_start, inst_end, dt, options=BudgetOptions()):
     return result
 
 
-def _flux_form(q, k, u, v, phi, pieces, geom):
+def _flux_form(q: xr.DataArray, k: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+               phi: xr.DataArray, pieces: dict[str, xr.DataArray],
+               geom: HorizontalGeometry) -> dict[str, xr.DataArray]:
     """The flux-form decomposition of the KEV budget on pressure levels
     (see terms.py), by term name."""
     divv = terms.three_d_divergence(u, v, pieces["d_omega_dp"], geom)
@@ -269,7 +276,9 @@ def _flux_form(q, k, u, v, phi, pieces, geom):
 INST_INPUTS = ["q_inst", "u_inst", "v_inst", "ps_inst"]
 
 
-def iter_windows(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=False):
+def iter_windows(ds: xr.Dataset, options: BudgetOptions = BudgetOptions(),
+                 windows: Iterable[int] | None = None, n_workers: int = 1,
+                 progress: bool = False) -> Iterator[xr.Dataset]:
     """Yield the budget of each window in turn, as compute() would return it
     for that window alone (window terms on a length-1 `time`, and the
     instantaneous columns at its two ends on `time_inst`).
@@ -283,7 +292,7 @@ def iter_windows(ds, options=BudgetOptions(), windows=None, n_workers=1, progres
     seconds = (ds["time_inst"].values[1:] - ds["time_inst"].values[:-1]) / np.timedelta64(1, "s")
     mean_state = ds.drop_dims("time_inst")
 
-    def one(i):
+    def one(i: int) -> xr.Dataset:
         inst = ds[INST_INPUTS].isel(time_inst=[i, i + 1]).load()
         inst = inst.merge(instantaneous_columns(inst, options))
         window = mean_state.isel(time=i).load()
@@ -310,7 +319,7 @@ def iter_windows(ds, options=BudgetOptions(), windows=None, n_workers=1, progres
             yield future.result()
 
 
-def combine(parts):
+def combine(parts: Sequence[xr.Dataset]) -> xr.Dataset:
     """Join per-window (or per-day) results in time: the window terms along
     `time`, the instantaneous columns along `time_inst`, each instantaneous
     step once."""
@@ -320,7 +329,9 @@ def combine(parts):
     return xr.merge([windows, inst])
 
 
-def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=False):
+def compute(ds: xr.Dataset, options: BudgetOptions = BudgetOptions(),
+            windows: Iterable[int] | None = None, n_workers: int = 1,
+            progress: bool = False) -> xr.Dataset:
     """The budgets for the windows of a standard input Dataset.
 
     Args:
@@ -345,7 +356,7 @@ def compute(ds, options=BudgetOptions(), windows=None, n_workers=1, progress=Fal
     return out
 
 
-def groups(result, quantity="KEV"):
+def groups(result: xr.Dataset, quantity: str = "KEV") -> xr.Dataset:
     """The budget of `quantity` in groups (kg s-3), in budget order:
 
         tend             change of the column over the window

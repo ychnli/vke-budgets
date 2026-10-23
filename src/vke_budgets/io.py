@@ -20,6 +20,8 @@ near 5e-5, and shrink a day of KEV + VTE output from about 200 to 120 MB.
 """
 import glob
 import os
+from collections.abc import Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -33,7 +35,8 @@ LEGACY_UNITS = {"kg s-3": "kg / s^3", "kg s-2": "kg / s^2", "kg m-1 s-1": "kg / 
                 "s-1": "1 / s", "m3 kg-1": "m^3 / kg"}
 
 
-def _encoding(ds, significant_bits=None, complevel=1, fill=None):
+def _encoding(ds: xr.Dataset, significant_bits: int | None = None, complevel: int = 1,
+              fill: float | None = None) -> dict[str, dict[str, Any]]:
     """float32, compressed, one lat-lon slab per chunk."""
     enc = {}
     for name, da in ds.data_vars.items():
@@ -48,7 +51,7 @@ def _encoding(ds, significant_bits=None, complevel=1, fill=None):
     return enc
 
 
-def _write_atomic(ds, path, encoding):
+def _write_atomic(ds: xr.Dataset, path: str, encoding: dict[str, dict[str, Any]]) -> None:
     """Write to a temporary name, then rename, so that an interrupted job
     never leaves a file that looks complete."""
     tmp = f"{path}.tmp"
@@ -56,7 +59,8 @@ def _write_atomic(ds, path, encoding):
     os.replace(tmp, path)
 
 
-def write_period(result, path, significant_bits=None, complevel=1):
+def write_period(result: xr.Dataset, path: str, significant_bits: int | None = None,
+                 complevel: int = 1) -> None:
     """Write a budget result in the clean layout. The last instantaneous
     step is dropped when it closes the last window (see the module
     docstring)."""
@@ -65,7 +69,7 @@ def write_period(result, path, significant_bits=None, complevel=1):
     _write_atomic(result, path, _encoding(result, significant_bits, complevel))
 
 
-def open_budget(paths, **kwargs):
+def open_budget(paths: str | Iterable[str], **kwargs: Any) -> xr.Dataset:
     """Open clean-layout files (a list, or a glob pattern) as one lazy
     Dataset, one dask chunk per time step.
 
@@ -87,12 +91,12 @@ def open_budget(paths, **kwargs):
 
 # --- Legacy layout -------------------------------------------------------
 
-def legacy_paths(out_dir, date):
+def legacy_paths(out_dir: str, date: str) -> tuple[str, str]:
     return (os.path.join(out_dir, f"analysis_AR_IVKE1_inst{date}.nc"),
             os.path.join(out_dir, f"analysis_AR_IVKE1_tavg{date}.nc"))
 
 
-def _legacy_dataset(ds, time_dim):
+def _legacy_dataset(ds: xr.Dataset, time_dim: str) -> xr.Dataset:
     """Rename time_dim to `time`, encode it as integer minutes, levels in hPa,
     legacy units, MERRA-2-style coordinate attributes."""
     ds = (ds.rename({time_dim: "time"}) if time_dim != "time" else ds).copy()
@@ -113,7 +117,8 @@ def _legacy_dataset(ds, time_dim):
     return ds
 
 
-def write_legacy(result, out_dir, date, complevel=0):
+def write_legacy(result: xr.Dataset, out_dir: str, date: str | pd.Timestamp,
+                 complevel: int = 0) -> None:
     """Write one day of a budget result as the reference's two files, under
     the reference's variable names."""
     result = names.to_legacy(result)
@@ -134,7 +139,7 @@ def write_legacy(result, out_dir, date, complevel=0):
         _write_atomic(ds, path, enc)
 
 
-def open_legacy(out_dir, dates):
+def open_legacy(out_dir: str, dates: str | Iterable[str]) -> xr.Dataset:
     """Read legacy-layout days (a date or a list of YYYYMMDD) into the
     clean layout: the package's names, window terms on `time`, ivt/kev/vte
     on `time_inst`, levels in Pa. Works for the reference's own output files

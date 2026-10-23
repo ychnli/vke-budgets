@@ -42,8 +42,22 @@ PROCESS_CODES = {"MST": "moist", "TRB": "turb", "GWD": "gwd", "CHM": "chem",
 MOMENTUM_CODES = ("MST", "TRB", "GWD", "DYN", "ANA")
 MOISTURE_CODES = ("MST", "TRB", "CHM", "DYN", "ANA")
 
+# The model's own dynamics tendencies are used only by the opt-in
+# cross-check (BudgetOptions.dyn_crosscheck), so the files may leave them out.
+OPTIONAL_CODES = ("DYN",)
 
-def find_files(date, root):
+# The variables open_day reads from each collection, besides the coordinates
+# (COORDINATES). scripts/download_merra2.py keeps only these.
+COORDINATES = ("time", "lev", "lat", "lon")
+VARIABLES = {
+    "inst3_3d_asm_Np": ("QV", "U", "V", "PS"),
+    "tavg3_3d_asm_Nv": ("PL", "QV", "U", "V", "H", "OMEGA"),
+    "tavg3_3d_udt_Np": tuple(f"D{c}DT{code}" for code in MOMENTUM_CODES for c in "UV"),
+    "tavg3_3d_qdt_Np": tuple(f"DQVDT{code}" for code in MOISTURE_CODES),
+}
+
+
+def find_files(date: str, root: str) -> dict[str, str]:
     """Paths of the five files for `date` (YYYYMMDD), looked up as
     root/YYYY/MERRA2_*.<collection>.<date>.nc4. The stream number (100, 200,
     300, 400, 401) is matched by the glob, so reprocessed streams are found
@@ -60,17 +74,19 @@ def find_files(date, root):
     return paths
 
 
-def _open(path):
+def _open(path: str) -> xr.Dataset:
     # One dask chunk per time step. The files' own chunks are much smaller
     # (91 x 144 points), and would make thousands of tiny tasks.
     return xr.open_dataset(path, chunks={"time": 1, "lev": -1, "lat": -1, "lon": -1})
 
 
-def _attrs(units, long_name):
+def _attrs(units: str, long_name: str) -> dict[str, str]:
     return {"units": units, "long_name": long_name}
 
 
-def open_day(date=None, root=None, paths=None, p_bottom=1000e2, p_top=150e2, g=GRAVITY):
+def open_day(date: str | None = None, root: str | None = None,
+             paths: dict[str, str] | None = None, p_bottom: float = 1000e2,
+             p_top: float = 150e2, g: float = GRAVITY) -> xr.Dataset:
     """One day of MERRA-2 as a standard input Dataset.
 
     Args:
@@ -81,25 +97,28 @@ def open_day(date=None, root=None, paths=None, p_bottom=1000e2, p_top=150e2, g=G
         p_bottom, p_top: range of pressure levels kept (Pa). The default,
             1000-150 hPa (24 levels), is the reference's.
         g: gravity (m s-2) for phi = g H. The reference uses 9.81.
+
+    The DYN tendencies (OPTIONAL_CODES) may be missing from the udt and qdt
+    files; every other variable in VARIABLES must be there.
     """
     if paths is None:
         paths = find_files(date, root)
     raw = {key: _open(path) for key, path in paths.items()}
 
-    def pressure_levels(da):
+    def pressure_levels(da: xr.DataArray) -> xr.DataArray:
         """Keep p_bottom..p_top and label the levels in Pa."""
         pa = da["lev"].values * 100.0
         da = da.isel(lev=np.flatnonzero((pa <= p_bottom) & (pa >= p_top)))
         return da.assign_coords(lev=da["lev"] * 100.0)
 
     # Instantaneous: today's steps plus 00Z of the next day.
-    def inst(name):
+    def inst(name: str) -> xr.DataArray:
         both = [raw["inst"][name], raw["inst_next"][name].isel(time=[0])]
         da = xr.concat(both, dim="time").rename(time="time_inst")
         return pressure_levels(da) if "lev" in da.dims else da
 
     # Window means on model levels, flipped to bottom-up.
-    def mean(name):
+    def mean(name: str) -> xr.DataArray:
         da = raw["mean"][name].isel(lev=slice(None, None, -1)).rename(lev="mlev")
         return da.assign_coords(mlev=da["mlev"].astype(int))
 
@@ -120,11 +139,15 @@ def open_day(date=None, root=None, paths=None, p_bottom=1000e2, p_top=150e2, g=G
         "omega": mean("OMEGA").assign_attrs(_attrs("Pa s-1", "vertical pressure velocity")),
     })
     for code in MOMENTUM_CODES:
+        if code in OPTIONAL_CODES and f"DUDT{code}" not in raw["udt"]:
+            continue
         proc = PROCESS_CODES[code]
         for comp, long in (("u", "eastward"), ("v", "northward")):
             ds[f"d{comp}dt_{proc}"] = pressure_levels(raw["udt"][f"D{comp.upper()}DT{code}"]) \
                 .assign_attrs(_attrs("m s-2", f"{long} wind tendency, {proc}"))
     for code in MOISTURE_CODES:
+        if code in OPTIONAL_CODES and f"DQVDT{code}" not in raw["qdt"]:
+            continue
         proc = PROCESS_CODES[code]
         ds[f"dqdt_{proc}"] = pressure_levels(raw["qdt"][f"DQVDT{code}"]) \
             .assign_attrs(_attrs("kg kg-1 s-1", f"specific humidity tendency, {proc}"))
@@ -145,7 +168,7 @@ def open_day(date=None, root=None, paths=None, p_bottom=1000e2, p_top=150e2, g=G
     return ds
 
 
-def _check_times(ds, raw):
+def _check_times(ds: xr.Dataset, raw: dict[str, xr.Dataset]) -> None:
     """The four collections must share one day, and each 3-hour window must
     be bracketed by the instantaneous steps on either side of it."""
     for key in ("udt", "qdt"):

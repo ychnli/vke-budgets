@@ -298,6 +298,16 @@ offline dynamics.
   on Np are missing.
 - Raw data on disk: 2017-07-12/13 in `$REF/data/2017`, and 2023-01-03…06 in
   `$REF/case2023/data/2023`.
+- 2010-01-01…2020-01-01 (for the climatology): `$SCRATCH/vke-budgets/merra2`,
+  cut to `merra2.VARIABLES` without DYN (2.7 GB/day, ~9.7 TB), by
+  `scripts/download_merra2.sbatch` (array job 48904024, submitted
+  2026-10-21, one task per month, `%8`). Purged after 90 days unmodified, so
+  process it within that (it can be re-downloaded). The cut files give an
+  identical `open_day` Dataset and budget (checked on 2023-01-04).
+- GES DISC's on-premises OPeNDAP (goldsmr5) is retired (HTTP 410). The cloud
+  OPeNDAP (opendap.earthdata.nasa.gov) times out (~180 s to first byte) on
+  the udt/qdt subsets, so the script downloads whole files (~90 MB/s) and
+  cuts them with `nccopy -V`; file URLs come from CMR.
 - ERA5 differs: `z` is already geopotential, latitude is descending, there are
   no physics or analysis tendencies on pressure levels, and Ong & Yang's ERA5
   script computes only the dynamics terms. So the physics and analysis terms

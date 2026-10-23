@@ -59,15 +59,18 @@ q^2 K (div u + d omega/dp), which vanishes only by continuity.
 
 The functions below take DataArrays on pressure levels and are pure.
 """
+import xarray as xr
+
+from .geometry import HorizontalGeometry
 from .horizontal import divergence, gradient
 
 
-def kinetic_energy(u, v):
+def kinetic_energy(u: xr.DataArray, v: xr.DataArray) -> xr.DataArray:
     """K = (u^2 + v^2) / 2 (m2 s-2)."""
     return 0.5 * (u * u + v * v)
 
 
-def weights(q, k, n):
+def weights(q: xr.DataArray, k: xr.DataArray, n: int) -> tuple[xr.DataArray, xr.DataArray]:
     """(w_m, w_v) = (q^n, n q^(n-1) K): the weights of the momentum and
     vapor tendencies in dE/dt, for E = q^n K."""
     w_m = q**n
@@ -77,20 +80,25 @@ def weights(q, k, n):
 
 # --- Momentum side --------------------------------------------------------
 
-def horizontal_advection_of_ke(w_m, u, v, k, geometry):
+def horizontal_advection_of_ke(w_m: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                               k: xr.DataArray,
+                               geometry: HorizontalGeometry) -> xr.DataArray:
     """hflux_ke (HAKE) = -w_m (u dK/dx + v dK/dy)."""
     dkdx, dkdy = gradient(k, geometry)
     return -w_m * (u * dkdx + v * dkdy)
 
 
-def vertical_advection_of_ke(w_m, u, v, omega_dudp, omega_dvdp):
+def vertical_advection_of_ke(w_m: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                             omega_dudp: xr.DataArray,
+                             omega_dvdp: xr.DataArray) -> xr.DataArray:
     """vflux_ke (VAKE) = -w_m (u omega du/dp + v omega dv/dp). The products omega du/dp
     are formed on model levels, where the vertical derivative is taken, and
     then interpolated (see budget.py)."""
     return -w_m * (u * omega_dudp + v * omega_dvdp)
 
 
-def pe_to_ke_conversion(w_m, u, v, phi, geometry):
+def pe_to_ke_conversion(w_m: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                        phi: xr.DataArray, geometry: HorizontalGeometry) -> xr.DataArray:
     """pe_conversion (PEKE) = -w_m (u dPhi/dx + v dPhi/dy): work done by the pressure-gradient
     force, which on pressure surfaces is the gradient of geopotential (phi). It
     converts potential energy into K."""
@@ -98,7 +106,8 @@ def pe_to_ke_conversion(w_m, u, v, phi, geometry):
     return -w_m * (u * dphidx + v * dphidy)
 
 
-def momentum_physics(w_m, u, v, dudt, dvdt):
+def momentum_physics(w_m: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                     dudt: xr.DataArray, dvdt: xr.DataArray) -> xr.DataArray:
     """w_m (u du/dt + v dv/dt) for a physics tendency (du/dt, dv/dt) of the
     wind: subgrid_momentum_moist, _turb, _gwd (MOKE, TOKE, GOKE),
     model_dynamics_momentum (DOKE), and the momentum half of analysis
@@ -108,32 +117,40 @@ def momentum_physics(w_m, u, v, dudt, dvdt):
 
 # --- Vapor side -----------------------------------------------------------
 
-def horizontal_advection_of_vapor(w_v, u, v, q, geometry):
+def horizontal_advection_of_vapor(w_v: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                                  q: xr.DataArray,
+                                  geometry: HorizontalGeometry) -> xr.DataArray:
     """hadv_vapor (HAV) = -w_v (u dq/dx + v dq/dy)."""
     dqdx, dqdy = gradient(q, geometry)
     return -w_v * (u * dqdx + v * dqdy)
 
 
-def vertical_advection_of_vapor(w_v, omega_dqdp):
+def vertical_advection_of_vapor(w_v: xr.DataArray,
+                                omega_dqdp: xr.DataArray) -> xr.DataArray:
     """vadv_vapor (VAV) = -w_v omega dq/dp, with omega dq/dp formed on
     model levels."""
     return -w_v * omega_dqdp
 
 
-def horizontal_convergence_of_vapor(k, w_m, u, v, geometry):
+def horizontal_convergence_of_vapor(k: xr.DataArray, w_m: xr.DataArray, u: xr.DataArray,
+                                    v: xr.DataArray,
+                                    geometry: HorizontalGeometry) -> xr.DataArray:
     """hflux_vapor (HCV) = -K div(q^n u), where w_m = q^n. With hflux_ke it
     makes the horizontal flux divergence -div(E u)."""
     return -k * divergence(w_m * u, w_m * v, geometry)
 
 
-def vertical_convergence_of_vapor(k, d_wm_omega_dp):
+def vertical_convergence_of_vapor(k: xr.DataArray,
+                                  d_wm_omega_dp: xr.DataArray) -> xr.DataArray:
     """vflux_vapor (VCV) = -K d(q^n omega)/dp, with the derivative taken on
     model levels. With vflux_ke it makes the vertical flux divergence
     -d(E omega)/dp."""
     return -k * d_wm_omega_dp
 
 
-def ncl_convergence_of_vapor(w_v, q, u, v, d_q_omega_dp, geometry):
+def ncl_convergence_of_vapor(w_v: xr.DataArray, q: xr.DataArray, u: xr.DataArray,
+                             v: xr.DataArray, d_q_omega_dp: xr.DataArray,
+                             geometry: HorizontalGeometry) -> tuple[xr.DataArray, xr.DataArray]:
     """(hflux_vapor_ncl, vflux_vapor_ncl) = (-w_v div(q u), -w_v d(q omega)/dp),
     HCV_vO and VCV_vO in the reference: the form commented out in the
     original NCL, kept for comparison. For n = 1 it equals (hflux_vapor,
@@ -141,7 +158,7 @@ def ncl_convergence_of_vapor(w_v, q, u, v, d_q_omega_dp, geometry):
     return -w_v * divergence(q * u, q * v, geometry), -w_v * d_q_omega_dp
 
 
-def moisture_physics(w_v, dqdt):
+def moisture_physics(w_v: xr.DataArray, dqdt: xr.DataArray) -> xr.DataArray:
     """w_v dq/dt for a physics tendency of q: net_vapor_source_moist, _turb,
     _chem (POV, TOV, COV), model_dynamics_vapor (DOV), and the vapor half of
     analysis (AOKEV)."""
@@ -150,14 +167,17 @@ def moisture_physics(w_v, dqdt):
 
 # --- Tendencies -----------------------------------------------------------
 
-def local_tendency(w_m, w_v, u, v, dqdt, dudt, dvdt):
+def local_tendency(w_m: xr.DataArray, w_v: xr.DataArray, u: xr.DataArray, v: xr.DataArray,
+                   dqdt: xr.DataArray, dudt: xr.DataArray,
+                   dvdt: xr.DataArray) -> xr.DataArray:
     """dE/dt = w_m (u du/dt + v dv/dt) + w_v dq/dt, from the change of the
     instantaneous q, u, v across the window: tend_local (KEVTEND,
     VTETEND)."""
     return w_m * (u * dudt + v * dvdt) + w_v * dqdt
 
 
-def surface_pressure_term(dpsdt, e_bottom, g, bottom_moves=True):
+def surface_pressure_term(dpsdt: xr.DataArray, e_bottom: xr.DataArray, g: float,
+                          bottom_moves: xr.DataArray | bool = True) -> xr.DataArray:
     """boundary (SPTE) = (dps/dt) E(p_bottom) / g (kg s-3): the Leibniz term
     for a column whose bottom moves with the surface pressure,
 
@@ -193,34 +213,42 @@ def surface_pressure_term(dpsdt, e_bottom, g, bottom_moves=True):
 # div(u) + d(omega)/dp vanishes by continuity, so every term proportional
 # to it measures the discrete continuity error.
 
-def horizontal_flux_of_ke(q, k, u, v, geometry):
+def horizontal_flux_of_ke(q: xr.DataArray, k: xr.DataArray, u: xr.DataArray,
+                          v: xr.DataArray, geometry: HorizontalGeometry) -> xr.DataArray:
     """fluxform_hflux_ke (HFOKE) = -q div(K u)."""
     return -q * divergence(k * u, k * v, geometry)
 
 
-def vertical_flux_of_ke(q, d_k_omega_dp):
+def vertical_flux_of_ke(q: xr.DataArray, d_k_omega_dp: xr.DataArray) -> xr.DataArray:
     """fluxform_vflux_ke (VFOKE) = -q d(K omega)/dp, the derivative taken on
     model levels."""
     return -q * d_k_omega_dp
 
 
-def horizontal_divergence_cross_term(q, k, u, v, geometry):
+def horizontal_divergence_cross_term(q: xr.DataArray, k: xr.DataArray, u: xr.DataArray,
+                                     v: xr.DataArray,
+                                     geometry: HorizontalGeometry) -> xr.DataArray:
     """fluxform_hcross (HFADT) = q K div(u)."""
     return q * k * divergence(u, v, geometry)
 
 
-def vertical_divergence_cross_term(q, k, d_omega_dp):
+def vertical_divergence_cross_term(q: xr.DataArray, k: xr.DataArray,
+                                   d_omega_dp: xr.DataArray) -> xr.DataArray:
     """fluxform_vcross (VFADT) = q K d(omega)/dp."""
     return q * k * d_omega_dp
 
 
-def three_d_divergence(u, v, d_omega_dp, geometry):
+def three_d_divergence(u: xr.DataArray, v: xr.DataArray, d_omega_dp: xr.DataArray,
+                       geometry: HorizontalGeometry) -> xr.DataArray:
     """divergence_3d_error (DIVV) = div(u) + d(omega)/dp (s-1), zero by
     continuity."""
     return divergence(u, v, geometry) + d_omega_dp
 
 
-def geopotential_flux_terms(q, phi, u, v, omega, d_phi_dp, d_omega_phi_dp, divv, geometry):
+def geopotential_flux_terms(q: xr.DataArray, phi: xr.DataArray, u: xr.DataArray,
+                            v: xr.DataArray, omega: xr.DataArray, d_phi_dp: xr.DataArray,
+                            d_omega_phi_dp: xr.DataArray, divv: xr.DataArray,
+                            geometry: HorizontalGeometry) -> tuple[xr.DataArray, ...]:
     """The flux form of pe_conversion = -q u . grad(Phi). With the
     hydrostatic specific volume alpha = -dPhi/dp,
 

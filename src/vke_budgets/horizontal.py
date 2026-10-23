@@ -31,7 +31,7 @@ import xarray as xr
 from .geometry import DEFAULT, HorizontalGeometry
 
 
-def _three_point_derivative(f, s, axis):
+def _three_point_derivative(f: np.ndarray, s: np.ndarray, axis: int) -> np.ndarray:
     """df/ds along `axis`, for coordinate values s (1D, possibly uneven).
 
     With spacings h0 = s[i] - s[i-1] and h1 = s[i+1] - s[i], the interior
@@ -61,7 +61,8 @@ def _three_point_derivative(f, s, axis):
     return np.moveaxis(out, -1, axis)
 
 
-def _periodic_derivative(f, s, axis, period):
+def _periodic_derivative(f: np.ndarray, s: np.ndarray, axis: int,
+                         period: float) -> np.ndarray:
     """df/ds along a periodic axis: pad one point on each side by wrapping
     around, take the three-point interior formula, drop the padding."""
     f = np.moveaxis(f, axis, -1)
@@ -71,7 +72,7 @@ def _periodic_derivative(f, s, axis, period):
     return np.moveaxis(out, -1, axis)
 
 
-def is_global_lon(lon_deg, tol=1e-6):
+def is_global_lon(lon_deg: np.ndarray, tol: float = 1e-6) -> bool:
     """True if the longitudes are evenly spaced and cover 360 degrees, so
     that the point after the last one is the first one."""
     step = np.diff(lon_deg)
@@ -79,23 +80,24 @@ def is_global_lon(lon_deg, tol=1e-6):
                 and abs(step[0] * lon_deg.size - 360.0) < tol)
 
 
-def _values(f, dims):
+def _values(f: xr.DataArray, dims: list[str]) -> tuple[np.ndarray, list[int]]:
     """float64 ndarray of f and the axis numbers of `dims`."""
     return np.asarray(f, dtype=np.float64), [f.get_axis_num(d) for d in dims]
 
 
-def _broadcast_lat(values, f, lat):
+def _broadcast_lat(values: np.ndarray, f: xr.DataArray, lat: str) -> np.ndarray:
     """Reshape a 1D array along `lat` so it broadcasts against f."""
     shape = [1] * f.ndim
     shape[f.get_axis_num(lat)] = values.size
     return values.reshape(shape)
 
 
-def _like(values, f):
+def _like(values: np.ndarray, f: xr.DataArray) -> xr.DataArray:
     return xr.DataArray(values, dims=f.dims, coords=f.coords)
 
 
-def ddx(f, geometry: HorizontalGeometry = DEFAULT, lat="lat", lon="lon"):
+def ddx(f: xr.DataArray, geometry: HorizontalGeometry = DEFAULT, lat: str = "lat",
+        lon: str = "lon") -> xr.DataArray:
     """Eastward derivative df/dx (f per m), equation (1).
 
     Undefined at the poles, where the latitude circle has zero length:
@@ -121,7 +123,8 @@ def ddx(f, geometry: HorizontalGeometry = DEFAULT, lat="lat", lon="lon"):
     return _like(dfdlam / _broadcast_lat(circle_radius, f, lat), f)
 
 
-def ddy(f, geometry: HorizontalGeometry = DEFAULT, lat="lat"):
+def ddy(f: xr.DataArray, geometry: HorizontalGeometry = DEFAULT,
+        lat: str = "lat") -> xr.DataArray:
     """Northward derivative df/dy (f per m), equation (2), differenced on
     the true northward distance S(phi). Works for ascending or descending
     latitude."""
@@ -136,12 +139,14 @@ def ddy(f, geometry: HorizontalGeometry = DEFAULT, lat="lat"):
     return _like(out, f)
 
 
-def gradient(f, geometry: HorizontalGeometry = DEFAULT, lat="lat", lon="lon"):
+def gradient(f: xr.DataArray, geometry: HorizontalGeometry = DEFAULT, lat: str = "lat",
+             lon: str = "lon") -> tuple[xr.DataArray, xr.DataArray]:
     """Horizontal gradient (df/dx, df/dy) of a scalar, in f per m."""
     return ddx(f, geometry, lat, lon), ddy(f, geometry, lat)
 
 
-def divergence(u, v, geometry: HorizontalGeometry = DEFAULT, lat="lat", lon="lon"):
+def divergence(u: xr.DataArray, v: xr.DataArray, geometry: HorizontalGeometry = DEFAULT,
+               lat: str = "lat", lon: str = "lon") -> xr.DataArray:
     """Horizontal divergence of the vector (u eastward, v northward),
     equation (3), in units of u per m."""
     lat_deg = v[lat].values

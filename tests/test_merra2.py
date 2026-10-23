@@ -93,3 +93,32 @@ def test_physics_tendencies(ds, paths):
 def test_find_files_rejects_missing_day():
     with pytest.raises(FileNotFoundError):
         merra2.find_files("19790101", ROOT)
+
+
+def test_dyn_tendencies_are_optional(paths, monkeypatch):
+    """Files cut by scripts/download_merra2.py leave out the DYN tendencies;
+    every other process stays."""
+    open_file = merra2._open
+
+    def without_dyn(path):
+        raw_file = open_file(path)
+        return raw_file.drop_vars([v for v in raw_file.data_vars if v.endswith("DYN")])
+
+    monkeypatch.setattr(merra2, "_open", without_dyn)
+    ds = merra2.open_day(paths=paths)
+    assert physics_processes(ds) == (("moist", "turb", "gwd", "ana"),
+                                     ("moist", "turb", "chem", "ana"))
+
+
+def test_variables_are_what_open_day_reads(paths, monkeypatch):
+    """merra2.VARIABLES (what the download keeps) is enough for open_day."""
+    open_file = merra2._open
+    collection = {path: os.path.basename(path).split(".")[1] for path in paths.values()}
+
+    def only_listed(path):
+        keep = set(merra2.VARIABLES[collection[path]]) | set(merra2.COORDINATES)
+        raw_file = open_file(path)
+        return raw_file.drop_vars([v for v in raw_file.variables if v not in keep])
+
+    monkeypatch.setattr(merra2, "_open", only_listed)
+    check_input(merra2.open_day(paths=paths))

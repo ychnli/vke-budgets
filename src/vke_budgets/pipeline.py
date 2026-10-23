@@ -14,28 +14,34 @@ are skipped.
 import glob
 import os
 import time
+from collections.abc import Callable
 
 import pandas as pd
+import xarray as xr
 
 from . import io
 from .budget import BudgetOptions, compute
 from .sources import merra2
 
 
-def _month_ranges(start, end):
+def _month_ranges(start: str | pd.Timestamp,
+                  end: str | pd.Timestamp) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
     """[(first, last), ...] for each calendar month that [start, end] touches."""
     days = pd.date_range(start, end, freq="D")
     months = days.to_period("M")
     return [(days[months == m][0], days[months == m][-1]) for m in months.unique()]
 
 
-def period_path(out_dir, first, last, prefix="budget"):
+def period_path(out_dir: str, first: pd.Timestamp, last: pd.Timestamp,
+                prefix: str = "budget") -> str:
     return os.path.join(out_dir, f"{prefix}_{first:%Y%m%d}-{last:%Y%m%d}.nc")
 
 
-def run(start, end, root, out_dir, options=BudgetOptions(), layout="clean",
-        significant_bits=None, n_workers=1, prefix="budget", open_day=merra2.open_day,
-        log=None):
+def run(start: str | pd.Timestamp, end: str | pd.Timestamp, root: str, out_dir: str,
+        options: BudgetOptions = BudgetOptions(), layout: str = "clean",
+        significant_bits: int | None = None, n_workers: int = 1, prefix: str = "budget",
+        open_day: Callable[[str, str], xr.Dataset] = merra2.open_day,
+        log: Callable[[str], None] | None = None) -> None:
     """Compute and write the budgets for every day from `start` to `end`
     (inclusive, anything pandas reads as a date).
 
@@ -54,7 +60,7 @@ def run(start, end, root, out_dir, options=BudgetOptions(), layout="clean",
     log = log or (lambda message: print(message, flush=True))
     os.makedirs(out_dir, exist_ok=True)
 
-    def one_day(day):
+    def one_day(day: pd.Timestamp) -> xr.Dataset:
         t0 = time.time()
         result = compute(open_day(f"{day:%Y%m%d}", root), options, n_workers=n_workers)
         log(f"{day:%Y-%m-%d} computed in {time.time() - t0:.0f} s")

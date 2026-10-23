@@ -4,6 +4,7 @@ rotation with uniform humidity, where every dynamical term vanishes, plus
 simple physics tendencies whose terms are known in closed form.
 """
 import numpy as np
+import pytest
 import xarray as xr
 
 from synthetic import COLUMN_MASS, DT, LAT, Q0, U0, kinetic_energy, solid_body
@@ -87,6 +88,11 @@ def test_window_selection_and_options():
     assert out["kev_hflux_ke"].attrs == {
         "units": "kg s-3", "budget_group": "hflux", "legacy_name": "IHAKE",
         "long_name": "KEV budget: horizontal advection of K, -q^n u.grad(K)"}
+
+
+def test_dyn_crosscheck_needs_the_dynamics_tendencies():
+    with pytest.raises(ValueError, match="dyn_crosscheck"):
+        budget.compute(solid_body(), budget.BudgetOptions(dyn_crosscheck=True))
 
 
 def test_threads_give_the_same_answer():

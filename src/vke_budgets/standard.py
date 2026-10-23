@@ -37,6 +37,7 @@ turb (turbulence), gwd (gravity-wave drag), chem (chemistry), ana (the analysis 
 own dynamics, a cross-check on the dynamical terms computed offline).
 """
 import numpy as np
+import xarray as xr
 
 MOMENTUM_PROCESSES = ("moist", "turb", "gwd", "dyn", "ana")
 MOISTURE_PROCESSES = ("moist", "turb", "chem", "dyn", "ana")
@@ -60,7 +61,7 @@ PHYSICS_VARS = {
 }
 
 
-def check_input(ds):
+def check_input(ds: xr.Dataset) -> None:
     """Raise ValueError, listing every problem, if ds is not a standard
     input Dataset. Physics tendencies are optional, but if present they must
     have the right dims and units."""
@@ -91,7 +92,7 @@ def check_input(ds):
         raise ValueError("not a standard input Dataset:\n  " + "\n  ".join(problems))
 
 
-def physics_processes(ds):
+def physics_processes(ds: xr.Dataset) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """The physics tendencies present in ds, as (momentum, moisture) tuples
     of process names. A momentum process counts only if both components are
     there."""

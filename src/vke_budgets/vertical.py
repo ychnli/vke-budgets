@@ -8,13 +8,14 @@ bottom-up) does not matter.
 """
 import numpy as np
 import xarray as xr
+from numpy.typing import ArrayLike
 
 # The reference's g (m s-2), used for every column integral and for
 # geopotential = g * height.
 GRAVITY = 9.81
 
 
-def _pressure_along(p, f, dim):
+def _pressure_along(p: ArrayLike | xr.DataArray, f: xr.DataArray, dim: str) -> np.ndarray:
     """p as an ndarray that broadcasts against f: either the 1D coordinate
     along `dim` or a field with the same dims as f (e.g. model-level
     pressure, which varies in space)."""
@@ -26,7 +27,9 @@ def _pressure_along(p, f, dim):
     return p.reshape(shape)
 
 
-def integrate_column(f, p=None, dim="lev", g=GRAVITY, p_bottom=1000e2, p_top=200e2):
+def integrate_column(f: xr.DataArray, p: ArrayLike | None = None, dim: str = "lev",
+                     g: float = GRAVITY, p_bottom: float = 1000e2,
+                     p_top: float = 200e2) -> xr.DataArray:
     """Mass-weighted column integral <f> = (1/g) * integral of f dp from
     p_top to p_bottom, by the trapezoid rule over pressure levels.
 
@@ -60,7 +63,7 @@ def integrate_column(f, p=None, dim="lev", g=GRAVITY, p_bottom=1000e2, p_top=200
                         coords={k: c for k, c in f.coords.items() if dim not in c.dims})
 
 
-def ddp(f, p, dim="lev"):
+def ddp(f: xr.DataArray, p: ArrayLike | xr.DataArray, dim: str = "lev") -> xr.DataArray:
     """df/dp (f per Pa) along `dim`, as NCL center_finite_diff_n does it
     (the reference's center_finite_diff_n):
 
@@ -110,7 +113,8 @@ class PressureInterpolator:
             coordinate; defaults to `dim`.
     """
 
-    def __init__(self, p_in, p_out, dim="lev", out_dim=None):
+    def __init__(self, p_in: xr.DataArray, p_out: ArrayLike, dim: str = "lev",
+                 out_dim: str | None = None) -> None:
         self.dim = dim
         self.out_dim = dim if out_dim is None else out_dim
         self.dims = p_in.dims
@@ -132,7 +136,7 @@ class PressureInterpolator:
             self.weight.append((target - p0) / (p1 - p0))
             self.inside.append((target >= p[..., 0]) & (target <= p[..., -1]))
 
-    def __call__(self, f):
+    def __call__(self, f: xr.DataArray) -> xr.DataArray:
         """f interpolated to p_out, with dims in the same order as f."""
         f = f.transpose(*self.dims)
         axis = f.get_axis_num(self.dim)
@@ -150,7 +154,8 @@ class PressureInterpolator:
         return xr.DataArray(np.moveaxis(out, -1, axis), dims=dims, coords=coords)
 
 
-def bottom_value(f, p=None, dim="lev"):
+def bottom_value(f: xr.DataArray, p: ArrayLike | None = None,
+                 dim: str = "lev") -> xr.DataArray:
     """f at the lowest level that is above ground (the highest pressure
     with a finite value). Columns with no finite value are NaN.
 

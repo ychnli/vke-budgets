@@ -46,7 +46,8 @@ CONFIGS = {
 }
 
 
-def stats(ours, ref, inner):
+def stats(ours: xr.DataArray, ref: xr.DataArray,
+          inner: xr.DataArray) -> tuple[float, float, int]:
     a = np.asarray(ours.where(inner), dtype=np.float64)
     b = np.asarray(ref.where(inner), dtype=np.float64)
     ok = np.isfinite(a) & np.isfinite(b)
@@ -56,7 +57,7 @@ def stats(ours, ref, inner):
             np.abs(diff).max(), int((np.isfinite(a) != np.isfinite(b)).sum()))
 
 
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--date", required=True)

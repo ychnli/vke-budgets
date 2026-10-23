@@ -23,3 +23,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 # export VKE_TEST_MERRA2_ROOT=/path/to/merra2
 # export VKE_TEST_REFERENCE=/path/to/reference/outputs
 # export VKE_TEST_AR_MASKS=/path/to/reference/masks
+
+# Optional, for scripts/download_merra2.sbatch: a directory on fast local
+# disk for the whole files while they are cut (default ROOT/.work).
+# export VKE_DOWNLOAD_WORK=/path/to/node-local/disk

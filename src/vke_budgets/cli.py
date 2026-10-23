@@ -1,5 +1,6 @@
 """Command line: `vke-budgets run --start ... --end ...`. See pipeline.run."""
 import argparse
+from collections.abc import Sequence
 from dataclasses import replace
 
 from . import geometry, pipeline
@@ -8,7 +9,7 @@ from .budget import BudgetOptions
 GEOMETRIES = {"default": geometry.DEFAULT, "reference": geometry.REFERENCE}
 
 
-def main(argv=None):
+def main(argv: Sequence[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="vke-budgets",
                                  description="KEV and VTE budgets of atmospheric rivers")
     sub = ap.add_subparsers(dest="command", required=True)
