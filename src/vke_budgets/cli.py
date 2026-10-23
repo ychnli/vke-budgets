@@ -1,9 +1,10 @@
-"""Command line: `vke-budgets run --start ... --end ...`. See pipeline.run."""
+"""Command line: `vke-budgets run ...` (the budgets, pipeline.run) and
+`vke-budgets climatology ...` (AR statistics by month, climatology.run)."""
 import argparse
 from collections.abc import Sequence
 from dataclasses import replace
 
-from . import geometry, pipeline
+from . import climatology, geometry, pipeline
 from .budget import BudgetOptions
 
 GEOMETRIES = {"default": geometry.DEFAULT, "reference": geometry.REFERENCE}
@@ -33,7 +34,30 @@ def main(argv: Sequence[str] | None = None) -> None:
                      help="apply the boundary term (SPTE) at every point, as the reference")
     run.add_argument("--flux-form", action="store_true",
                      help="also the flux-form decomposition (IHFOKE ... IQPHIDIVV)")
+    clim = sub.add_parser("climatology", help="AR counts and frequencies, one file per month",
+                          description=climatology.__doc__,
+                          formatter_class=argparse.RawDescriptionHelpFormatter)
+    clim.add_argument("--start", required=True, help="first month, YYYY-MM")
+    clim.add_argument("--end", required=True, help="last month, YYYY-MM (inclusive)")
+    clim.add_argument("--root", required=True, help="MERRA-2 root, one directory per year")
+    clim.add_argument("--out", required=True, help="output directory")
+    clim.add_argument("--task", type=int, default=None,
+                      help="only the task-th group of months (0 = the first), for array jobs")
+    clim.add_argument("--months-per-task", type=int, default=1, help="months in each group")
+    clim.add_argument("--save-steps", action="store_true",
+                      help="also write the columns and masks of every time step")
     args = ap.parse_args(argv)
+
+    if args.command == "climatology":
+        if args.task is not None:
+            try:
+                climatology.task_months(climatology.months_between(args.start, args.end),
+                                        args.task, args.months_per_task)
+            except ValueError as error:
+                clim.error(str(error))
+        climatology.run(args.start, args.end, args.root, args.out, task=args.task,
+                        months_per_task=args.months_per_task, save_steps=args.save_steps)
+        return
 
     options = replace(BudgetOptions(), geometry=GEOMETRIES[args.geometry],
                       quantities=tuple(args.quantities.split(",")), keep_3d=args.keep_3d,

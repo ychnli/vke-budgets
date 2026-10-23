@@ -184,13 +184,18 @@ offline dynamics.
   changes. The northeast Pacific selection keeps the value previews off the
   blanked polar rows (all NaN).
 
-## Notebooks
+## Analysis repository (notebooks, figures, Sherlock jobs)
 
-- The user keeps their own notebooks in `notebooks/` (commit them without
-  outputs). The kernel `vke-budgets` (`~/.local/share/jupyter/kernels/vke`)
-  sets `VKE_MERRA2_ROOT`, `VKE_CASE_OUT`, `VKE_AR_MASKS`,
-  `VKE_MERRA2_ROOT_2017`, `VKE_JULY_OUT`, `VKE_AIDI_OUTPUT` and one thread per
-  library; notebooks read paths only from those.
+- The user's analysis lives in a separate repository,
+  `$GROUP_HOME/yucli/vke-ar-analysis` (moved there 2026-10-23, user's
+  decision): the notebooks, the Sherlock job scripts that run the package for
+  the paper reproduction, and later the figure and movie scripts. It installs
+  this package editable and has its own CLAUDE.md. This repository holds the
+  package only, plus generic tools (`scripts/download_merra2.*`,
+  `scripts/run_merra2.sbatch`, `scripts/compare_reference.py`).
+- The kernel `vke-budgets` (`~/.local/share/jupyter/kernels/vke`) sets
+  `VKE_MERRA2_ROOT`, `VKE_CASE_OUT`, `VKE_AR_MASKS`, `VKE_MERRA2_ROOT_2017`,
+  `VKE_JULY_OUT`, `VKE_AIDI_OUTPUT` and one thread per library.
 
 ## Standard input and adapters
 
@@ -261,6 +266,22 @@ offline dynamics.
   `contributions` (Zhang et al. Eqs. 8–10: growth and movement per term).
   Significance tests (t-test with lag autocorrelation) are not implemented.
   The paper's Text S2 (supplement) is not in `papers/`.
+- `climatology.py` (`vke-budgets climatology`): AR statistics by calendar
+  month, `ar_stats_YYYYMM.nc` (`ar_count_/ar_frequency_/mean_<field>`,
+  `n_steps`), and with `save_steps` the columns and masks of every step,
+  `ar_steps_YYYYMM.nc`. Each day contributes its instants but the closing
+  one (8 per MERRA-2 day). Detection runs once per month: DetectBlobs costs
+  ~13 s per call whatever the number of steps, and treats steps
+  independently, so the masks equal day-by-day detection (checked). A month
+  takes ~8 min on 2 CPUs and peaks near 6 GB (3 GB Python + 3 GB
+  DetectBlobs); Slurm's MaxRSS shows the whole request because it counts the
+  page cache. `--task`/`--months-per-task` for array jobs.
+- The thresholds' origin: `$REF/threshold_v2.txt` holds six thresholds
+  (IVT, IKEV, IVTE, then their Laplacians; only the Laplacians are used) and
+  six "levels" (0.065/0.045/0.070; 0.27/0.20/0.20) that
+  make_website_budget.py calls percentile levels. How Aidi derived them is
+  not in `$REF`; the paper's Text S1 has it (not in `papers/`). Ong & Yang
+  used the round values -40000 (IVT) and -2000 (IVTE).
 
 ## Output and long runs (`io.py`, `pipeline.py`, `cli.py`)
 
@@ -304,6 +325,10 @@ offline dynamics.
   2026-10-21, one task per month, `%8`). Purged after 90 days unmodified, so
   process it within that (it can be re-downloaded). The cut files give an
   identical `open_day` Dataset and budget (checked on 2023-01-04).
+- AR climatology 2010-2019 (2026-10-23): `$SCRATCH/vke-budgets/ar_climatology`,
+  120 `ar_stats_YYYYMM.nc` (29216 steps) and `ar_steps_201001.nc` (3-hourly,
+  for a movie). Days per year, max / area mean poleward of 20 deg: IVT
+  118 / 24.5, IKEV 85 / 22.8, IVTE 144 / 25.0 (Figure 1's scale ends at 120).
 - GES DISC's on-premises OPeNDAP (goldsmr5) is retired (HTTP 410). The cloud
   OPeNDAP (opendap.earthdata.nasa.gov) times out (~180 s to first byte) on
   the udt/qdt subsets, so the script downloads whole files (~90 MB/s) and
