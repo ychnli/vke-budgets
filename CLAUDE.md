@@ -253,18 +253,20 @@ offline dynamics.
 - `budget.iter_windows` yields one window at a time (for streaming
   reductions); `compute` and `combine` build on it.
 
-## AR detection and composites (`detection.py`, `composite.py`)
+## AR detection and attribution (`detection.py`, `contribution.py`)
 
 - `detection.detect(columns)`: wraps TempestExtremes DetectBlobs exactly as
-  the reference (Laplacian{9,7.0} < threshold, ≥ 50 points, |lat| ≥ 20°;
-  `REFERENCE_THRESHOLDS` from threshold_v2.txt). Masks match the reference's
-  point for point (2023-01-03…05, all three fields). `window_mask`: an AR at
+  the reference (Laplacian{9,7.0} < threshold, ≥ 50 points, |lat| ≥ 20°).
+  With the reference's thresholds, masks match the reference's point for
+  point (2023-01-03…05, all three fields; `tests/test_detection.py` holds
+  those thresholds). `window_mask`: an AR at
   either end of a window (the reference's mean ≥ 0.5).
-- `composite.py`: `region`, `area_integral` (cos-lat), `ar_index` (1° box
-  mean), `composite` (regression on the index times one standard deviation,
-  with `lag` and `when`, as Ong & Yang 2024 and Zhang et al. 2026), and
-  `contributions` (Zhang et al. Eqs. 8–10: growth and movement per term).
-  Significance tests (t-test with lag autocorrelation) are not implemented.
+- `contribution.py` (was `composite.py`): `region`, `area_integral`
+  (cos-lat) and `contributions` (Zhang et al. Eqs. 8–10: growth/decay and
+  movement per term), for individual frames only (user's decision,
+  2026-10-26). Regression composites (`ar_index`, `composite`) were removed
+  because the user had not checked them; they are in the git history
+  (commit 24ec51f, `composite.py`) if wanted back.
   The paper's Text S2 (supplement) is not in `papers/`.
 - `climatology.py` (`vke-budgets climatology`): AR statistics by calendar
   month, `ar_stats_YYYYMM.nc` (`ar_count_/ar_frequency_/mean_<field>`,
@@ -276,12 +278,15 @@ offline dynamics.
   takes ~8 min on 2 CPUs and peaks near 6 GB (3 GB Python + 3 GB
   DetectBlobs); Slurm's MaxRSS shows the whole request because it counts the
   page cache. `--task`/`--months-per-task` for array jobs.
-- The thresholds' origin: `$REF/threshold_v2.txt` holds six thresholds
-  (IVT, IKEV, IVTE, then their Laplacians; only the Laplacians are used) and
-  six "levels" (0.065/0.045/0.070; 0.27/0.20/0.20) that
-  make_website_budget.py calls percentile levels. How Aidi derived them is
-  not in `$REF`; the paper's Text S1 has it (not in `papers/`). Ong & Yang
-  used the round values -40000 (IVT) and -2000 (IVTE).
+- Thresholds (user's decision, 2026-10-25): `DEFAULT_THRESHOLDS`, constant
+  Laplacian thresholds, IVT -40000 and VTE -2000 (Ong & Yang 2024; their
+  VTE value best matched IVT's global mean AR frequency) and KEV -460000,
+  chosen likewise to roughly match the AR climatology. The reference's
+  `threshold_v2.txt` values (-41023.5, -478203.4, -2105.3, plus six
+  unexplained field thresholds and "levels") are not kept in the package:
+  how Aidi derived them is not in `$REF` (the paper's Text S1, not in
+  `papers/`). Climatology files record the thresholds in their attributes
+  (`threshold_laplacian_<field>`).
 
 ## Output and long runs (`io.py`, `pipeline.py`, `cli.py`)
 
@@ -325,7 +330,9 @@ offline dynamics.
   2026-10-21, one task per month, `%8`). Purged after 90 days unmodified, so
   process it within that (it can be re-downloaded). The cut files give an
   identical `open_day` Dataset and budget (checked on 2023-01-04).
-- AR climatology 2010-2019 (2026-10-23): `$SCRATCH/vke-budgets/ar_climatology`,
+- AR climatology 2010-2019 with the reference's thresholds (2026-10-23):
+  `$SCRATCH/vke-budgets/ar_climatology_from_thresholdsv2` (renamed
+  2026-10-25; `ar_climatology` is now the rerun with `DEFAULT_THRESHOLDS`),
   120 `ar_stats_YYYYMM.nc` (29216 steps) and `ar_steps_201001.nc` (3-hourly,
   for a movie). Days per year, max / area mean poleward of 20 deg: IVT
   118 / 24.5, IKEV 85 / 22.8, IVTE 144 / 25.0 (Figure 1's scale ends at 120).

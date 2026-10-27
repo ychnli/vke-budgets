@@ -1,5 +1,5 @@
 """
-Atmospheric river detection, as in Ong & Yang (2024) and the reference.
+Atmospheric river detection following the TempestExtremes method
 
 An AR is a blob where the Laplacian of a column field (IVT, the column KEV
 or the column VTE) is strongly negative, i.e. a narrow ridge of the field:
@@ -14,10 +14,6 @@ at the centre, scaled to a Laplacian (units of the field per rad^2). The
 detection itself is TempestExtremes' DetectBlobs, run exactly as the
 reference runs it (case2023/run_port.sbatch). TempestExtremes must be
 installed (conda package tempest-extremes).
-
-The thresholds were chosen so that each field gives about the same global
-AR frequency (Zhang et al. 2026, Text S1); REFERENCE_THRESHOLDS are the
-reference's (threshold_v2.txt).
 """
 import os
 import shutil
@@ -28,14 +24,20 @@ import numpy as np
 import xarray as xr
 from numpy.typing import ArrayLike
 
-# Laplacian thresholds in the field's units per rad^2.
-# from Zhang et al 2026
-REFERENCE_THRESHOLDS = {"ivt": -41023.514894, "kev": -478203.362115, "vte": -2105.315636}
-MIN_POINTS = 50          # smallest blob, in grid points
-MIN_ABS_LAT = 20.0       # degrees
+# Laplacian thresholds in the field's units per rad^2. IVT and VTE are Ong &
+# Yang's (2024): -40000 is the usual TempestExtremes IVT threshold, and -2000
+# for VTE was chosen to give about the same global mean AR frequency. The KEV
+# threshold is chosen likewise, to roughly match the AR climatology of the
+# other two.
+DEFAULT_THRESHOLDS = {"ivt": -40000, "kev": -460000, "vte": -2000}
+
+# smallest blob, in grid points
+MIN_POINTS = 50
+
+MIN_ABS_LAT = 20.0
 
 
-def detect(columns: xr.Dataset, thresholds: dict[str, float] = REFERENCE_THRESHOLDS,
+def detect(columns: xr.Dataset, thresholds: dict[str, float] = DEFAULT_THRESHOLDS,
            min_points: int = MIN_POINTS, min_abs_lat: float = MIN_ABS_LAT,
            executable: str = "DetectBlobs") -> xr.Dataset:
     """AR masks from instantaneous column fields.

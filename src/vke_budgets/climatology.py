@@ -128,7 +128,7 @@ def month_paths(out_dir: str, month: date) -> tuple[str, str]:
 def run(start: str, end: str, root: str, out_dir: str, task: int | None = None,
         months_per_task: int = 1, save_steps: bool = False,
         options: BudgetOptions = BudgetOptions(),
-        thresholds: dict[str, float] = detection.REFERENCE_THRESHOLDS,
+        thresholds: dict[str, float] = detection.DEFAULT_THRESHOLDS,
         open_day: Callable[[str, str], xr.Dataset] = merra2.open_day,
         log: Callable[[str], None] | None = None) -> None:
     """Compute and write the AR statistics of every month from start to end
@@ -162,7 +162,8 @@ def run(start: str, end: str, root: str, out_dir: str, task: int | None = None,
         log(f"{month:%Y-%m} detection in {time.time() - t0:.0f} s")
         attrs = {"source": columns.attrs.get("source", ""), "month": f"{month:%Y-%m}",
                  "detection": "TempestExtremes DetectBlobs (vke_budgets.detection.detect)",
-                 "created_by": "vke_budgets.climatology.run"}
+                 "created_by": "vke_budgets.climatology.run",
+                 **{f"threshold_laplacian_{name}": value for name, value in thresholds.items()}}
         if save_steps:
             _write(xr.merge([columns, masks]).assign_attrs(attrs), steps_path)
         _write(ar_statistics(columns, masks).assign_attrs(attrs), stats_path)

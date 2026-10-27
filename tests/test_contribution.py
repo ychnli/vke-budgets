@@ -1,14 +1,13 @@
-"""Composites and attribution on fields with known answers."""
+"""Attribution to AR growth/decay and movement, on fields with known answers."""
 import numpy as np
 import pandas as pd
-import pytest
 import xarray as xr
 
-from vke_budgets.composite import ar_index, area_integral, composite, contributions, region
+from vke_budgets.contribution import contributions, region
 
 LAT = np.arange(10.0, 70.1, 0.5)
 LON = np.arange(-180.0, 180.0, 0.625)
-TIMES = pd.date_range("2023-01-01T01:30", periods=200, freq="3h").values
+TIMES = pd.date_range("2023-01-01T01:30", periods=3, freq="3h").values
 
 
 def field(values, time=True):
@@ -24,45 +23,6 @@ def test_region_crosses_the_dateline():
     box = region(f, (170, -160), (30, 40))            # 170 E to 160 W
     assert box["lon"].min() == 170 and box["lon"].max() == 200
     assert box.sizes["lat"] == 21
-
-
-def test_ar_index_is_the_box_mean():
-    f = field(np.where(np.abs(LAT - 37.75)[:, None] < 2, 5.0, 1.0) * np.ones(LON.size), time=False)
-    assert float(ar_index(f, 180.3, 37.75)) == pytest.approx(5.0)
-
-
-def series(seed=0):
-    rng = np.random.default_rng(seed)
-    return xr.DataArray(rng.standard_normal(len(TIMES)), dims="time", coords={"time": TIMES})
-
-
-def test_composite_of_a_linear_field():
-    """X = a(x) I(t) + b(x): the composite is a(x) std(I), whatever b."""
-    i = series()
-    a = np.cos(np.deg2rad(LAT))[:, None] * np.ones(LON.size)
-    x = field(a[None] * i.values[:, None, None] + 3.0)
-    out = composite(x, i)
-    np.testing.assert_allclose(out, a * float(i.std(ddof=1)), rtol=1e-12)
-
-
-def test_composite_lag_recovers_a_delayed_response():
-    """X(t) = I(t - 4): regressing X(t + 4) on I(t) gives back std(I)."""
-    i = series(1)
-    x = field(np.roll(i.values, 4)[:, None, None] * np.ones((1, LAT.size, LON.size)))
-    at_lag = composite(x, i, lag=4)
-    expected = float(i.isel(time=slice(0, -4)).std(ddof=1))
-    np.testing.assert_allclose(at_lag, expected, rtol=1e-12)
-    assert at_lag.attrs["composite_samples"] == len(TIMES) - 4
-    assert abs(float(composite(x, i).mean())) < 0.5 * expected     # no response at lag 0
-
-
-def test_composite_on_selected_times():
-    i = series(2)
-    when = xr.DataArray(i.values > 0, dims="time", coords={"time": TIMES})
-    x = field(2.0 * i.values[:, None, None])
-    out = composite(x, i, when=when)
-    np.testing.assert_allclose(out, 2.0 * float(i.where(when, drop=True).std(ddof=1)), rtol=1e-12)
-    assert out.attrs["composite_samples"] == int(when.sum())
 
 
 DOMAIN = {"lon": (150.0, 210.0), "lat": (20.0, 50.0)}
@@ -102,3 +62,16 @@ def test_contributions_add_up():
     total = contributions(xr.Dataset({"whole": whole}), i, whole, **DOMAIN)
     np.testing.assert_allclose(out.growth.sum("term"), total.growth.sel(term="whole"), rtol=1e-10)
     np.testing.assert_allclose(out.movement.sum("term"), 1.0, rtol=1e-10)
+
+
+def test_contributions_frame_by_frame():
+    """With a time dimension, each frame is attributed on its own."""
+    rng = np.random.default_rng(4)
+    i = xr.concat([blob(x0) for x0 in (175.0, 180.0, 185.0)], "time").assign_coords(time=TIMES)
+    tend = field(rng.standard_normal((len(TIMES), LAT.size, LON.size)))
+    terms = xr.Dataset({"half": tend / 2, "rest": tend / 2})
+    out = contributions(terms, i, tend, **DOMAIN)
+    assert out.growth.sizes["time"] == 3
+    for k in range(3):
+        one = contributions(terms.isel(time=k), i.isel(time=k), tend.isel(time=k), **DOMAIN)
+        xr.testing.assert_allclose(out.isel(time=k), one)

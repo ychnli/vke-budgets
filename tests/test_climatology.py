@@ -72,6 +72,8 @@ def test_run_writes_one_file_per_month_and_resumes(tmp_path, monkeypatch):
             assert steps["mask_kev"].dtype == np.int8
             np.testing.assert_array_equal(steps["mask_kev"].sum("time_inst"),
                                           stats["ar_count_kev"])
+            for name, value in detection.DEFAULT_THRESHOLDS.items():
+                assert stats.attrs[f"threshold_laplacian_{name}"] == value
     assert not [f for f in os.listdir(out) if f.endswith(".tmp")]
 
     log.clear()

@@ -39,16 +39,19 @@ def test_window_mask_is_an_ar_at_either_end():
 
 ROOT = os.environ.get("VKE_TEST_MERRA2_ROOT", "")
 MASKS = os.environ.get("VKE_TEST_AR_MASKS", "")
+# the reference's thresholds (threshold_v2.txt), with which its masks were made
+REFERENCE_THRESHOLDS = {"ivt": -41023.514894, "kev": -478203.362115, "vte": -2105.315636}
 
 
 @needs_tempest
 @pytest.mark.skipif(not (os.path.isdir(ROOT) and os.path.isdir(MASKS)),
                     reason="set VKE_TEST_MERRA2_ROOT and VKE_TEST_AR_MASKS to run")
 def test_masks_match_the_reference():
-    """2023-01-04: the same masks as the reference, point for point."""
+    """2023-01-04, with the reference's thresholds: the same masks as the
+    reference, point for point."""
     day = merra2.open_day("20230104", ROOT)
     columns = budget.instantaneous_columns(day[budget.INST_INPUTS].isel(time_inst=slice(0, 8)).load())
-    masks = detection.detect(columns)
+    masks = detection.detect(columns, REFERENCE_THRESHOLDS)
     for name, var in (("ivt", "IVT"), ("kev", "IKEV"), ("vte", "IVTE")):
         with xr.open_dataset(os.path.join(MASKS, f"detect_AR_{var}_Lap_v2_20230104.nc")) as ref:
             np.testing.assert_array_equal(masks[f"mask_{name}"].values,
