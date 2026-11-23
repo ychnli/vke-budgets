@@ -125,12 +125,25 @@ def test_pipeline_months_and_resume(tmp_path):
 
     # A month interrupted after one day resumes from its part file.
     os.remove(os.path.join(out, "budget_20230130-20230131.nc"))
-    os.makedirs(os.path.join(out, "parts"))
+    os.makedirs(os.path.join(out, "parts_202301"))
     io.write_period(budget.compute(solid_body(n_time=8, start="2023-01-30")),
-                    os.path.join(out, "parts", "20230130.nc"))
+                    os.path.join(out, "parts_202301", "20230130.nc"))
     pipeline.run("2023-01-30", "2023-01-31", None, out, open_day=fake_source(calls), log=None)
     assert calls[3:] == ["20230131"]
-    assert not os.path.exists(os.path.join(out, "parts"))
+    assert not os.path.exists(os.path.join(out, "parts_202301"))
+
+
+def test_pipeline_parallel_runs_keep_their_own_parts(tmp_path):
+    """Two runs writing different months into one directory: the one that
+    finishes first must not remove the other's unfinished parts."""
+    out = str(tmp_path)
+    # The other run has finished one day of February and is still going.
+    os.makedirs(os.path.join(out, "parts_202302"))
+    io.write_period(budget.compute(solid_body(n_time=8, start="2023-02-01")),
+                    os.path.join(out, "parts_202302", "20230201.nc"))
+    pipeline.run("2023-01-31", "2023-01-31", None, out, open_day=fake_source([]), log=None)
+    assert os.path.exists(os.path.join(out, "parts_202302", "20230201.nc"))
+    assert not os.path.exists(os.path.join(out, "parts_202301"))
 
 
 def test_pipeline_legacy(tmp_path):

@@ -3,19 +3,23 @@ Run the budgets over a range of days and write them to disk.
 
 The output is one file per calendar month (or the part of
 one that the range covers), named <prefix>_<first day>-<last day>.nc. Each
-finished day is first written to <out_dir>/parts/<day>.nc, so a job that is
-killed resumes at the day it was on. When a month is complete its parts are
-merged into the month file, rounded to `significant_bits` if given, and
-deleted. Months whose file exists are skipped.
+finished day is first written to <out_dir>/parts_<YYYYMM>/<day>.nc, so a job
+that is killed resumes at the day it was on. When a month is complete its parts
+are merged into the month file, rounded to `significant_bits` if given, and
+deleted with their directory. Months whose file exists are skipped.
+
+Each month has its own parts directory, so jobs that write different months
+into the same out_dir (an array job, for example) never touch each other's
+parts.
 
 Legacy layout: save two files per day; days whose files exist
 are skipped.
 """
-import glob
 import os
 import time
 from collections.abc import Callable
 
+import dask
 import pandas as pd
 import xarray as xr
 
@@ -75,25 +79,28 @@ def run(start: str | pd.Timestamp, end: str | pd.Timestamp, root: str, out_dir: 
     if layout != "clean":
         raise ValueError(f"unknown layout {layout!r}")
 
-    parts_dir = os.path.join(out_dir, "parts")
-    os.makedirs(parts_dir, exist_ok=True)
     for first, last in _month_ranges(start, end):
         path = period_path(out_dir, first, last, prefix)
         if os.path.exists(path):
             log(f"{os.path.basename(path)} exists, skipped")
             continue
+        parts_dir = os.path.join(out_dir, f"parts_{first:%Y%m}")
+        os.makedirs(parts_dir, exist_ok=True)
         parts = []
         for day in pd.date_range(first, last, freq="D"):
             part = os.path.join(parts_dir, f"{day:%Y%m%d}.nc")
             if not os.path.exists(part):
                 io.write_period(one_day(day), part)
             parts.append(part)
-        with io.open_budget(parts) as month:
+        # Merge in one thread. With dask's threads, reading the day files
+        # while writing the month file can deadlock on the netCDF/HDF5 locks
+        # (2 of ~80 merges hung for hours, 2026-11-01); the merge is limited
+        # by the disk anyway.
+        with dask.config.set(scheduler="synchronous"), io.open_budget(parts) as month:
             month.attrs = {**month.attrs, "first_day": f"{first:%Y-%m-%d}",
                            "last_day": f"{last:%Y-%m-%d}"}
             io.write_period(month, path, significant_bits=significant_bits)
         for part in parts:
             os.remove(part)
-        log(f"wrote {path}")
-    if not glob.glob(os.path.join(parts_dir, "*")):
         os.rmdir(parts_dir)
+        log(f"wrote {path}")

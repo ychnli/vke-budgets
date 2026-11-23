@@ -46,6 +46,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     clim.add_argument("--months-per-task", type=int, default=1, help="months in each group")
     clim.add_argument("--save-steps", action="store_true",
                       help="also write the columns and masks of every time step")
+    clim.add_argument("--save-masks", action="store_true",
+                      help="also write the masks of every time step, without the columns")
+    clim.add_argument("--no-exclude-tcs", action="store_true",
+                      help="keep tropical cyclone cores in the masks (for model output)")
+    clim.add_argument("--ibtracs-dir", default=None,
+                      help="directory of the IBTrACS tracks file, downloaded there if missing "
+                           "(default: $VKE_IBTRACS_DIR, else data/ibtracs in the repository)")
     args = ap.parse_args(argv)
 
     if args.command == "climatology":
@@ -56,7 +63,9 @@ def main(argv: Sequence[str] | None = None) -> None:
             except ValueError as error:
                 clim.error(str(error))
         climatology.run(args.start, args.end, args.root, args.out, task=args.task,
-                        months_per_task=args.months_per_task, save_steps=args.save_steps)
+                        months_per_task=args.months_per_task, save_steps=args.save_steps,
+                        save_masks=args.save_masks,
+                        exclude_tcs=not args.no_exclude_tcs, ibtracs_dir=args.ibtracs_dir)
         return
 
     options = replace(BudgetOptions(), geometry=GEOMETRIES[args.geometry],
