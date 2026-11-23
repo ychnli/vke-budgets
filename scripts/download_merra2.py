@@ -15,6 +15,12 @@ cloud OPeNDAP cannot cut the tendency files before it times out), cut with
 checked, and only then moved into ROOT. So a file in ROOT is complete, and
 reruns skip it. Without DYN a day is 2.7 GB instead of 5.3 GB.
 
+With --with-dyn, a udt or qdt file already in ROOT but without the DYN
+tendencies (cut without --with-dyn; same name) is downloaded again and
+replaced, in one atomic rename, so a reader of the old file is undisturbed.
+Telling the two apart means opening the file, about 10 ms each, under a
+second per month; without --with-dyn no file is opened.
+
 The file names come from NASA's CMR catalogue, which takes care of the
 stream numbers (MERRA2_300 up to 2010, 400 after, 401 for reprocessed
 months). Authentication: an Earthdata Login entry (machine
@@ -113,13 +119,33 @@ def cut(source: str, target: str, names: list[str]) -> None:
             raise RuntimeError(f"{target}: missing {absent} or not 8 time steps")
 
 
+def up_to_date(path: str, names: list[str]) -> bool:
+    """Whether the file at path can be kept: it exists and, if `names` asks
+    for the DYN tendencies, holds them. Only then is the file opened (about
+    10 ms), so without --with-dyn nothing is opened; a file that cannot be
+    opened counts as out of date."""
+    if not os.path.exists(path):
+        return False
+    dyn = [v for v in names if v.endswith(merra2.OPTIONAL_CODES)]
+    if not dyn:
+        return True
+    try:
+        with netCDF4.Dataset(path) as f:
+            return all(v in f.variables for v in dyn)
+    except OSError:
+        return False
+
+
 def download(url: str, root: str, work: str, names: list[str], cookies: str) -> int:
-    """One file into root/YYYY/, unless it is there already. Returns the
-    size kept in bytes (0 if skipped)."""
+    """One file into root/YYYY/, unless it is there already with `names`'s
+    DYN tendencies (see up_to_date); a file without them is downloaded again
+    and replaced. Returns the size kept in bytes (0 if skipped)."""
     name = os.path.basename(url)
     final = os.path.join(root, name.rsplit(".", 2)[-2][:4], name)
-    if os.path.exists(final):
+    if up_to_date(final, names):
         return 0
+    if os.path.exists(final):
+        print(f"{name}: no DYN tendencies, downloading again", flush=True)
     os.makedirs(os.path.dirname(final), exist_ok=True)
     whole = os.path.join(work, f"{name}.{os.getpid()}")
     part = f"{final}.{os.getpid()}.part"
@@ -153,7 +179,8 @@ def main() -> None:
     parser.add_argument("--work", help="directory for the whole files while they are cut "
                                        "(one at a time, up to 2.3 GB); default ROOT/.work")
     parser.add_argument("--with-dyn", action="store_true",
-                        help="keep the DYN tendencies (for BudgetOptions.dyn_crosscheck)")
+                        help="keep the DYN tendencies (for BudgetOptions.dyn_crosscheck); "
+                             "udt and qdt files in ROOT without them are downloaded again")
     parser.add_argument("--dry-run", action="store_true",
                         help="list the files and their streams, download nothing")
     args = parser.parse_args()
