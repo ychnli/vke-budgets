@@ -261,6 +261,20 @@ offline dynamics.
   point (2023-01-03…05, all three fields; `tests/test_detection.py` holds
   those thresholds). `window_mask`: an AR at
   either end of a window (the reference's mean ≥ 0.5).
+- **TC exclusion (user's decision, 2026-10-27; not in the papers or the
+  reference).** `detect(columns, tracks=...)` drops points within 4°
+  great-circle distance (inclusive) of a TC centre, as a second DetectBlobs
+  threshold (`tc_free,>,0.5`), so the 50-point filter runs once, after the
+  cut; the Laplacian is still of the full field. Tracks:
+  `sources/ibtracs.py`, IBTrACS v04r01 `since1980` (11 MB), nature `TS` only
+  (any intensity; ET/SS/DS/NR/MX kept), main tracks only, times rounded to
+  the minute (stored ~40 µs off), matched exactly to the instants.
+  `ensure_tracks` downloads it to `$VKE_IBTRACS_DIR` or the gitignored
+  `data/ibtracs/`. On by default in `climatology.run` (download with a
+  message if missing); `--no-exclude-tcs` for model output. `detect` itself
+  defaults to no tracks. Jan 2010 (8 storms): 0.32–0.44% of AR points
+  removed, ~85% of them in the cores, the rest in pieces left below 50 points;
+  without tracks the masks are unchanged.
 - `contribution.py` (was `composite.py`): `region`, `area_integral`
   (cos-lat) and `contributions` (Zhang et al. Eqs. 8–10: growth/decay and
   movement per term), for individual frames only (user's decision,
@@ -327,15 +341,25 @@ offline dynamics.
 - 2010-01-01…2020-01-01 (for the climatology): `$SCRATCH/vke-budgets/merra2`,
   cut to `merra2.VARIABLES` without DYN (2.7 GB/day, ~9.7 TB), by
   `scripts/download_merra2.sbatch` (array job 48904024, submitted
-  2026-10-21, one task per month, `%8`). Purged after 90 days unmodified, so
-  process it within that (it can be re-downloaded). The cut files give an
-  identical `open_day` Dataset and budget (checked on 2023-01-04).
+  2026-10-21, one task per month, `%8`). The cut files give an identical
+  `open_day` Dataset and budget (checked on 2023-01-04). That copy is now
+  deleted; the analysis reads Aidi's archive instead,
+  `$GROUP_SCRATCH/Aidi/MERRA2/MERRA2_raw`: whole files, 1980-01-01 to
+  2026-09-30, every day complete (`scripts/check_merra2.py`, 2026-11-18).
 - AR climatology 2010-2019 with the reference's thresholds (2026-10-23):
   `$SCRATCH/vke-budgets/ar_climatology_from_thresholdsv2` (renamed
   2026-10-25; `ar_climatology` is now the rerun with `DEFAULT_THRESHOLDS`),
   120 `ar_stats_YYYYMM.nc` (29216 steps) and `ar_steps_201001.nc` (3-hourly,
   for a movie). Days per year, max / area mean poleward of 20 deg: IVT
   118 / 24.5, IKEV 85 / 22.8, IVTE 144 / 25.0 (Figure 1's scale ends at 120).
+- With TC exclusion (2026-10-27, jobs 49868035/49868036):
+  `$SCRATCH/vke-budgets/ar_climatology_remove_tc`, `DEFAULT_THRESHOLDS`, 120
+  stats files and `ar_steps_201001.nc`. Against `ar_climatology`: max / mean
+  poleward of 20 deg IVT 120.8 / 25.04 (was 120.8 / 25.34, -1.2%), IKEV
+  81.7 / 23.50 (was 87.8 / 23.75, -1.1%), IVTE 148.2 / 25.71 (was 148.2 /
+  26.02, -1.2%). No point gains; the largest local loss is 11–13 d/yr near
+  22N 127E (east of Taiwan). The old IKEV maximum (28N 127E) was in that
+  typhoon region; the new one is at 32.5N 156E.
 - GES DISC's on-premises OPeNDAP (goldsmr5) is retired (HTTP 410). The cloud
   OPeNDAP (opendap.earthdata.nasa.gov) times out (~180 s to first byte) on
   the udt/qdt subsets, so the script downloads whole files (~90 MB/s) and

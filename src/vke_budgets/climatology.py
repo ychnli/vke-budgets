@@ -18,13 +18,20 @@ over periods, so the frequency of many months is
     sum over months of ar_count / sum over months of n_steps.
 
 `run` works one calendar month at a time and writes one file per month,
-<out_dir>/ar_stats_YYYYMM.nc, and with save_steps also the time steps
-themselves (the columns and the masks), <out_dir>/ar_steps_YYYYMM.nc.
+<out_dir>/ar_stats_YYYYMM.nc. With save_steps it also writes the time steps
+themselves (the columns and the masks), <out_dir>/ar_steps_YYYYMM.nc, and
+with save_masks the masks of every time step alone, <out_dir>/ar_masks_YYYYMM.nc
+(about 3 MB per month; the columns are in the budget output too).
 
 Each day contributes the instants of its own standard input Dataset except
 the last, which closes the day's last window and is the first instant of the
 next day (00Z for MERRA-2). So no instant is counted twice, and a MERRA-2
 month has 8 steps per day.
+
+Tropical cyclone cores are excluded from the masks by default
+(detection.detect with sources.ibtracs tracks; the tracks file is downloaded
+on first use). Pass exclude_tcs=False for model output, which has no
+observed tracks.
 
 Detection runs once per month and field, not once per day: the masks are the
 same, because DetectBlobs treats every time step on its own, but each
@@ -41,7 +48,7 @@ import xarray as xr
 
 from . import detection, io
 from .budget import BudgetOptions, instantaneous_columns
-from .sources import merra2
+from .sources import ibtracs, merra2
 
 FIELDS = ("ivt", "kev", "vte")
 # The part of the instantaneous state that the columns need.
@@ -125,10 +132,16 @@ def month_paths(out_dir: str, month: date) -> tuple[str, str]:
             os.path.join(out_dir, f"ar_steps_{month:%Y%m}.nc"))
 
 
+def masks_path(out_dir: str, month: date) -> str:
+    """The file of a month's masks alone (save_masks)."""
+    return os.path.join(out_dir, f"ar_masks_{month:%Y%m}.nc")
+
+
 def run(start: str, end: str, root: str, out_dir: str, task: int | None = None,
-        months_per_task: int = 1, save_steps: bool = False,
+        months_per_task: int = 1, save_steps: bool = False, save_masks: bool = False,
         options: BudgetOptions = BudgetOptions(),
         thresholds: dict[str, float] = detection.DEFAULT_THRESHOLDS,
+        exclude_tcs: bool = True, ibtracs_dir: str | None = None,
         open_day: Callable[[str, str], xr.Dataset] = merra2.open_day,
         log: Callable[[str], None] | None = None) -> None:
     """Compute and write the AR statistics of every month from start to end
@@ -140,8 +153,14 @@ def run(start: str, end: str, root: str, out_dir: str, task: int | None = None,
         root: input root, passed to open_day(YYYYMMDD, root).
         out_dir: output directory, created if needed.
         save_steps: also write the columns and masks of every time step.
+        save_masks: also write the masks of every time step, without the
+            columns.
         options: for the column integrals (g, p_bottom, p_top, quantities).
         thresholds: Laplacian threshold of each field (detection.detect).
+        exclude_tcs: exclude tropical cyclone cores (IBTrACS) from the masks;
+            for a reanalysis. False for model output.
+        ibtracs_dir: directory of the IBTrACS file (default:
+            ibtracs.default_directory()); downloaded there if missing.
         open_day: the source adapter.
         log: function taking a progress message; by default, print.
     """
@@ -150,22 +169,28 @@ def run(start: str, end: str, root: str, out_dir: str, task: int | None = None,
     if task is not None:
         months = task_months(months, task, months_per_task)
     os.makedirs(out_dir, exist_ok=True)
+    tracks = ibtracs.open_tracks(ibtracs.ensure_tracks(ibtracs_dir, log)) if exclude_tcs else None
 
     for month in months:
         stats_path, steps_path = month_paths(out_dir, month)
-        if os.path.exists(stats_path) and (not save_steps or os.path.exists(steps_path)):
+        wanted = [stats_path] + [steps_path] * save_steps + [masks_path(out_dir, month)] * save_masks
+        if all(os.path.exists(path) for path in wanted):
             log(f"{month:%Y-%m} exists, skipped")
             continue
         columns = period_columns(days_in_month(month), root, options, open_day, log)
         t0 = time.time()
-        masks = detection.detect(columns, thresholds)
+        masks = detection.detect(columns, thresholds, tracks=tracks)
         log(f"{month:%Y-%m} detection in {time.time() - t0:.0f} s")
         attrs = {"source": columns.attrs.get("source", ""), "month": f"{month:%Y-%m}",
                  "detection": "TempestExtremes DetectBlobs (vke_budgets.detection.detect)",
                  "created_by": "vke_budgets.climatology.run",
-                 **{f"threshold_laplacian_{name}": value for name, value in thresholds.items()}}
+                 **{f"threshold_laplacian_{name}": value for name, value in thresholds.items()},
+                 "tc_exclusion": (f"{detection.TC_RADIUS} degrees around {tracks.attrs['source']}"
+                                  if exclude_tcs else "none")}
         if save_steps:
             _write(xr.merge([columns, masks]).assign_attrs(attrs), steps_path)
+        if save_masks:
+            _write(masks.assign_attrs(attrs), masks_path(out_dir, month))
         _write(ar_statistics(columns, masks).assign_attrs(attrs), stats_path)
         log(f"wrote {stats_path}")
 

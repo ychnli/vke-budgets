@@ -12,10 +12,23 @@ import xarray as xr
 
 from synthetic import solid_body
 from vke_budgets import budget, climatology, detection
+from vke_budgets.sources import ibtracs
+
+FAKE_TRACKS = xr.Dataset({"time": ("point", np.array(["2023-01-04"], "datetime64[ns]")),
+                          "lat": ("point", [30.0]), "lon": ("point", [-140.0])},
+                         attrs={"source": "fake tracks"})
 
 
-def fake_detect(columns, thresholds=None):
+@pytest.fixture(autouse=True)
+def no_download(monkeypatch):
+    """Stand-ins for the IBTrACS file, so that run never downloads it."""
+    monkeypatch.setattr(ibtracs, "ensure_tracks", lambda directory=None, log=None: "tracks.nc")
+    monkeypatch.setattr(ibtracs, "open_tracks", lambda path=None, start=None, end=None: FAKE_TRACKS)
+
+
+def fake_detect(columns, thresholds=None, tracks=None):
     """An "AR" wherever a column is above its global mean at that step."""
+    fake_detect.tracks = tracks
     return xr.Dataset({f"mask_{f}": (columns[f] > columns[f].mean(("lat", "lon")))
                        .assign_attrs(long_name=f"{f} above its mean")
                        for f in climatology.FIELDS if f in columns})
@@ -74,6 +87,8 @@ def test_run_writes_one_file_per_month_and_resumes(tmp_path, monkeypatch):
                                           stats["ar_count_kev"])
             for name, value in detection.DEFAULT_THRESHOLDS.items():
                 assert stats.attrs[f"threshold_laplacian_{name}"] == value
+            assert stats.attrs["tc_exclusion"] == "4.0 degrees around fake tracks"
+    assert fake_detect.tracks is FAKE_TRACKS
     assert not [f for f in os.listdir(out) if f.endswith(".tmp")]
 
     log.clear()
@@ -82,8 +97,39 @@ def test_run_writes_one_file_per_month_and_resumes(tmp_path, monkeypatch):
     assert log == ["2023-01 exists, skipped", "2023-02 exists, skipped"]
 
 
+def test_run_saves_masks_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(detection, "detect", fake_detect)
+    out = str(tmp_path)
+    climatology.run("2023-02", "2023-02", "", out, save_masks=True, open_day=open_day,
+                    log=lambda message: None)
+    assert sorted(os.listdir(out)) == ["ar_masks_202302.nc", "ar_stats_202302.nc"]
+    with xr.open_dataset(climatology.masks_path(out, date(2023, 2, 1))) as masks, \
+            xr.open_dataset(climatology.month_paths(out, date(2023, 2, 1))[0]) as stats:
+        assert sorted(masks.data_vars) == ["mask_ivt", "mask_kev", "mask_vte"]
+        assert masks.sizes["time_inst"] == 8 * 28 and masks["mask_kev"].dtype == np.int8
+        np.testing.assert_array_equal(masks["mask_kev"].sum("time_inst"), stats["ar_count_kev"])
+        assert masks.attrs["tc_exclusion"] == stats.attrs["tc_exclusion"]
+    # A month with its statistics but without its masks is done again.
+    os.remove(climatology.masks_path(out, date(2023, 2, 1)))
+    log = []
+    climatology.run("2023-02", "2023-02", "", out, save_masks=True, open_day=open_day,
+                    log=log.append)
+    assert "2023-02 exists, skipped" not in log
+    assert os.path.exists(climatology.masks_path(out, date(2023, 2, 1)))
+
+
 def test_run_one_task(tmp_path, monkeypatch):
     monkeypatch.setattr(detection, "detect", fake_detect)
     climatology.run("2023-01", "2023-03", "", str(tmp_path), task=1, months_per_task=2,
                     open_day=open_day, log=lambda message: None)
     assert sorted(os.listdir(tmp_path)) == ["ar_stats_202303.nc"]
+
+
+def test_run_without_tc_exclusion(tmp_path, monkeypatch):
+    monkeypatch.setattr(detection, "detect", fake_detect)
+    monkeypatch.setattr(ibtracs, "ensure_tracks", lambda *args, **kwargs: pytest.fail("download"))
+    climatology.run("2023-01", "2023-01", "", str(tmp_path), exclude_tcs=False,
+                    open_day=open_day, log=lambda message: None)
+    assert fake_detect.tracks is None
+    with xr.open_dataset(climatology.month_paths(str(tmp_path), date(2023, 1, 1))[0]) as stats:
+        assert stats.attrs["tc_exclusion"] == "none"

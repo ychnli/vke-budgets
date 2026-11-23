@@ -110,6 +110,19 @@ masks = detection.detect(ds[["kev", "vte"]])     # mask_kev and mask_vte
 masks["mask_kev"].isel(time_inst=0).plot()
 ```
 
+In a reanalysis, the moist cores of tropical cyclones should not count as
+ARs. Given tropical cyclone tracks, `detect` removes every point within
+$4^\circ$ of a cyclone centre before it applies the 50-point rule. The tracks
+come from IBTrACS (the tropical stages of its best tracks); `open_tracks`
+downloads the file (11 MB) the first time.
+
+```python
+from vke_budgets.sources import ibtracs
+
+tracks = ibtracs.open_tracks()
+masks = detection.detect(ds[["kev", "vte"]], tracks=tracks)
+```
+
 The masks are on the instantaneous times. To select the 3-hour windows of the
 budget terms that have an AR at either end, use
 `detection.window_mask(masks["mask_kev"], ds["time"].values)`.
